@@ -95,7 +95,7 @@ def load_aso_snotel_geometry(aso_swe_file, folder_path):
 # Calculating nearest SNOTEL sites
 def calculate_nearest_snotel(region, aso_gdf, snotel_gdf, n=6, distance_cache=None):
 
-    nearest_snotel_dict_path = f"{HOME}/SWEML/data/NSMv2.0/data/TrainingDFs/{region}"
+    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
     #check to see if regional TrainingDF path exists, if not, make one
     if not os.path.exists(nearest_snotel_dict_path):
         os.makedirs(nearest_snotel_dict_path, exist_ok=True)
@@ -123,7 +123,7 @@ def calculate_nearest_snotel(region, aso_gdf, snotel_gdf, n=6, distance_cache=No
     print(f"Saving nearest SNOTEL in {region} for each cell id in a pkl file")        
     with open(f"{nearest_snotel_dict_path}/nearest_SNOTEL.pkl", 'wb') as handle:
         pkl.dump(nearest_snotel, handle, protocol=pkl.HIGHEST_PROTOCOL)
-    return nearest_snotel
+    #return nearest_snotel
 
 def haversine_vectorized(lat1, lon1, lat2, lon2):
     
@@ -162,15 +162,17 @@ def create_polygon(row):
 
 def fetch_snotel_sites_for_cellids(region):  
     #relative file paths
-    aso_swe_files_folder_path = f"{HOME}/SWEML/data/NSMv2.0/data/Processed_SWE/{region}"
-    snotel_path = f"{HOME}/SWEML/data/NSMv2.0/data/SNOTEL_Data/"
+    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/Processed_SWE/{region}"
+    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
     Snotelmeta_path = f"{snotel_path}ground_measures_metadata.csv"
     
     try:
         snotel_file = pd.read_csv(Snotelmeta_path)
     except:
         print("Snotel meta not found, retreiving from AWS S3")
-        key = "NSMv2.0"+Snotelmeta_path.split("NSMv2.0",1)[1]       
+        if not os.path.exists(snotel_path):
+            os.makedirs(snotel_path, exist_ok=True)
+        key = "NSMv2.0"+Snotelmeta_path.split("SWEMLv2.0",1)[1]       
         S3.meta.client.download_file(BUCKET_NAME, key,Snotelmeta_path)
         snotel_file = pd.read_csv(Snotelmeta_path)
 
@@ -188,12 +190,18 @@ def fetch_snotel_sites_for_cellids(region):
     ASO_meta_loc_DF.drop_duplicates(subset=['cell_id'], inplace=True)
     ASO_meta_loc_DF.set_index('cell_id', inplace=True)
 
+    #removing bad ASO sites
+    print(f"Removing nan ASO sites and saving geodataframe to TrainingDFs {region} folder.")
+    ASO_meta_loc_DF = ASO_meta_loc_DF[ASO_meta_loc_DF['swe']>=0]
+    ASO_meta_loc_DF.to_csv(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet")
+
+
     print('converting to geodataframe')
     aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['x'], ASO_meta_loc_DF['y'])]
     aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry)
 
     print('Loading SNOTEL metadata and processing snotel geometry')
-    snotel_path = f"{HOME}/SWEML/data/NSMv2.0/data/SNOTEL_Data/"
+    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
     Snotelmeta_path = f"{snotel_path}ground_measures_metadata.csv"
     snotel_file = pd.read_csv(Snotelmeta_path)
 
@@ -207,18 +215,18 @@ def fetch_snotel_sites_for_cellids(region):
     # Calculating nearest SNOTEL sites
     nearest_snotel = calculate_nearest_snotel(region,aso_gdf, snotel_gdf, n=6)
 
-    return nearest_snotel
+   # return nearest_snotel
 
 def Nearest_Snotel_2_obs(region, output_res, dropna = True):    
     print('Connecting site observations with nearest monitoring network obs')
 
     #get Snotel observations
-    snotel_path = f"{HOME}/SWEML/data/NSMv2.0/data/SNOTEL_Data/"
+    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
     Snotelobs_path = f"{snotel_path}ground_measures_train_featuresALLDATES.parquet"
     #ASO observations
-    aso_swe_files_folder_path = f"{HOME}/SWEML/data/NSMv2.0/data/Processed_SWE/{region}"
+    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/Processed_SWE/{region}"
     #nearest snotel path
-    nearest_snotel_dict_path = f"{HOME}/SWEML/data/NSMv2.0/data/TrainingDFs/{region}"
+    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
 
     #Get sites/snotel observations from 2013-2019
     print('Loading observations from 2013-2019')
@@ -226,7 +234,9 @@ def Nearest_Snotel_2_obs(region, output_res, dropna = True):
         snotel_data = pd.read_csv(Snotelobs_path)
     except:
         print("Snotel obs not found, retreiving from AWS S3")
-        key = "NSMv2.0"+Snotelobs_path.split("NSMv2.0",1)[1]        
+        if not os.path.exists(snotel_path):
+            os.makedirs(snotel_path, exist_ok=True)
+        key = "NSMv2.0"+Snotelobs_path.split("SWEMLv2.0",1)[1]        
         S3.meta.client.download_file(BUCKET_NAME, key,Snotelobs_path)
         snotel_data = pd.read_csv(Snotelobs_path)
 
@@ -296,114 +306,3 @@ def Nearest_Snotel_2_obs(region, output_res, dropna = True):
     final_df.to_csv(f"{nearest_snotel_dict_path}/ASO_Obs_DF.parquet")
     return final_df
 
-#OLD -  conver this to new function
-# def fetch_snotel_sites_for_cellids(region):
-#     aso_swe_files_folder_path = f"{HOME}/SWEML/data/NSMv2.0/data/Processed_SWE/{region}"
-#     metadata_path = f"{HOME}/SWEML/data/NSMv2.0/data/TrainingDFs/grid_cells_meta.csv"
-#     snotel_path = f"{HOME}/SWEML/data/NSMv2.0/data/SNOTEL_Data/"
-    
-#     #Get metadata for sites/snotel and observations from 2013-2019
-#     #Get site metadata
-#     try:
-#         metadata_df = pd.read_csv(metadata_path)
-#         #metadata_df['geometry'] = metadata_df['geometry'].apply(wkt.loads)
-#     except:
-#         print("metadata not found, retreiving from AWS S3")
-#         key = "NSMv2.0"+metadata_path.split("NSMv2.0",1)[1]        
-#         S3.meta.client.download_file(BUCKET_NAME, key,metadata_path)
-#         metadata_df = pd.read_csv(metadata_path)
-
-#      #get Snotel site meta
-#     Snotelmeta_path = f"{snotel_path}ground_measures_metadata.csv"
-    
-#     try:
-#         snotel_file = pd.read_csv(Snotelmeta_path)
-#     except:
-#         print("Snotel meta not found, retreiving from AWS S3")
-#         key = "NSMv2.0"+Snotelmeta_path.split("NSMv2.0",1)[1]       
-#         S3.meta.client.download_file(BUCKET_NAME, key,Snotelmeta_path)
-#         snotel_file = pd.read_csv(Snotelmeta_path)
-
-#     #get Snotel observations
-#     Snotelobs_path = f"{snotel_path}ground_measures_train_featuresALLDATES.parquet"
-#     try:
-#         snotel_data = pd.read_csv(Snotelobs_path)
-#     except:
-#         print("Snotel obs not found, retreiving from AWS S3")
-#         key = "NSMv2.0"+Snotelobs_path.split("NSMv2.0",1)[1]        
-#         S3.meta.client.download_file(BUCKET_NAME, key,Snotelobs_path)
-#         snotel_data = pd.read_csv(Snotelobs_path)
-
-#     print('Processing prediction location geometry')
-#     metadata_df = metadata_df.drop(columns=['Unnamed: 0'], axis=1)
-#     metadata_df['geometry'] = metadata_df.apply(create_polygon, axis=1)
-    
-#     metadata = gpd.GeoDataFrame(metadata_df, geometry='geometry')
-
-#     date_columns = snotel_data.columns[1:]
-#     new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
-#     snotel_data_f = snotel_data.rename(columns=new_column_names)
-
-#     print('Processing snotel geometry')
-#     snotel_geometry = [Point(xy) for xy in zip(snotel_file['longitude'], snotel_file['latitude'])]
-#     snotel_gdf = gpd.GeoDataFrame(snotel_file, geometry=snotel_geometry)
-
-#     final_df = pd.DataFrame()
-
-#     #RJs implementation to only do sites once. still need to figure out how to extend to the RegionVal.pkl file..., likely add to this file...
-#     print('Finding unique sites to locate nearest in situ observation stations.')
-#     aso_gdf = pd.DataFrame()
-
-#     for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
-#         aso_file = pd.read_csv(os.path.join(aso_swe_files_folder_path, aso_swe_file))
-#         aso_gdf = pd.concat([aso_gdf, aso_file])
-
-#     aso_gdf.drop_duplicates(subset=['cell_id'], inplace=True)
-
-#     for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):      #This will need to be added later in order to connect obs to sites
-
-#         if os.path.isdir(os.path.join(aso_swe_files_folder_path, aso_swe_file)):
-#             continue
-
-#         # timestamp = aso_swe_file.split('_')[-1].split('.')[0]
-
-#         aso_gdf = load_aso_snotel_geometry(aso_swe_file, aso_swe_files_folder_path)
-#         aso_swe_data = pd.read_csv(os.path.join(aso_swe_files_folder_path, aso_swe_file))
-
-#         # Calculating nearest SNOTEL sites
-#         nearest_snotel, distance_cache = calculate_nearest_snotel(aso_gdf, snotel_gdf, n=6)
-        
-#         transposed_data = {}
-
-#         if timestamp in new_column_names.values():
-#             for idx, aso_row in aso_gdf.iterrows():    
-#                 cell_id = idx
-#                 station_ids = nearest_snotel[cell_id]
-#                 selected_snotel_data = snotel_data_f[['station_id', timestamp]].loc[snotel_data_f['station_id'].isin(station_ids)]
-#                 station_mapping = {old_id: f"nearest site {i+1}" for i, old_id in enumerate(station_ids)}
-                
-#                 # Rename the station IDs in the selected SNOTEL data
-#                 selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
-
-#                 # Transpose and set the index correctly
-#                 transposed_data[cell_id] = selected_snotel_data.set_index('station_id').T
-
-#             transposed_df = pd.concat(transposed_data, axis=0)
-            
-#             # Reset index and rename columns
-#             transposed_df = transposed_df.reset_index()
-#             transposed_df.rename(columns={'level_0': 'cell_id', 'level_1': 'Date'}, inplace = True)
-#             transposed_df['Date'] = pd.to_datetime(transposed_df['Date'])
-        
-#             aso_swe_data['Date'] = pd.to_datetime(timestamp)
-#             aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
-#             merged_df = pd.merge(aso_swe_data, transposed_df, how='left', on=['cell_id', 'Date'])
-        
-#             final_df = pd.concat([final_df, merged_df], ignore_index=True)
-        
-#         else:
-#             aso_swe_data['Date'] = pd.to_datetime(timestamp)
-#             aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
-    
-#             # No need to merge in this case, directly concatenate
-#             final_df = pd.concat([final_df, aso_swe_data], ignore_index=True)
