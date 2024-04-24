@@ -83,16 +83,6 @@ BUCKET_NAME = 'national-snow-model'
 BUCKET = S3.Bucket(BUCKET_NAME)
 
 
-def load_aso_snotel_geometry(aso_swe_file, folder_path):
-    print('Loading ASO/SNOTEL Geometry')
-    
-    aso_file = pd.read_csv(os.path.join(folder_path, aso_swe_file))
-    aso_file.set_index('cell_id', inplace=True)
-    aso_geometry = [Point(xy) for xy in zip(aso_file['x'], aso_file['y'])]
-    aso_gdf = gpd.GeoDataFrame(aso_file, geometry=aso_geometry)
-    
-    return aso_gdf
-
 # Calculating nearest SNOTEL sites
 def calculate_nearest_snotel(region, aso_gdf, snotel_gdf, n=6, distance_cache=None):
 
@@ -186,14 +176,14 @@ def fetch_snotel_sites_for_cellids(region):
     for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
         aso_file = pd.read_csv(os.path.join(aso_swe_files_folder_path, aso_swe_file))
         ASO_meta_loc_DF = pd.concat([ASO_meta_loc_DF, aso_file])
-
-    print('Identifying unique sites to create geophysical information dataframe') 
-    ASO_meta_loc_DF.drop_duplicates(subset=['cell_id'], inplace=True)
-    ASO_meta_loc_DF.set_index('cell_id', inplace=True)
-
+    
     #removing bad ASO sites
     print(f"Removing nan ASO sites and saving geodataframe to TrainingDFs {region} folder.")
     ASO_meta_loc_DF = ASO_meta_loc_DF[ASO_meta_loc_DF['swe']>=0]
+    
+    print('Identifying unique sites to create geophysical information dataframe') 
+    ASO_meta_loc_DF.drop_duplicates(subset=['cell_id'], inplace=True)
+    ASO_meta_loc_DF.set_index('cell_id', inplace=True)
     ASO_meta_loc_DF.to_csv(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet")
 
 
