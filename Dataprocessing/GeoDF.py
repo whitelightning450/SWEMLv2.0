@@ -1,6 +1,7 @@
 # Import packages
 # Dataframe Packages
 import numpy as np
+from numpy import gradient, rad2deg, arctan2
 import xarray as xr
 import pandas as pd
 
@@ -24,7 +25,7 @@ from osgeo import gdalconst
 import earthaccess as ea
 import h5py
 import pickle
-from pystac_client import Client
+import pystac_client
 import richdem as rd
 import planetary_computer
 from planetary_computer import sign
@@ -42,7 +43,7 @@ from pathlib import Path
 from tqdm import tqdm
 import time
 import requests
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+import concurrent.futures as cf
 import dask
 import dask.dataframe as dd
 from dask.distributed import progress
@@ -213,96 +214,125 @@ def fetch_snotel_sites_for_cellids(region):
     snotel_gdf = gpd.GeoDataFrame(snotel_file, geometry=snotel_geometry)
 
     # Calculating nearest SNOTEL sites
-    nearest_snotel = calculate_nearest_snotel(region,aso_gdf, snotel_gdf, n=6)
+    calculate_nearest_snotel(region,aso_gdf, snotel_gdf, n=6)
 
-   # return nearest_snotel
 
-def Nearest_Snotel_2_obs(region, output_res, dropna = True):    
-    print('Connecting site observations with nearest monitoring network obs')
+def GeoSpatial(region):
+    print(f"Loading geospatial data for {region}")
+    ASO_meta_loc_DF = pd.read_csv(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet")
 
-    #get Snotel observations
-    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
-    Snotelobs_path = f"{snotel_path}ground_measures_train_featuresALLDATES.parquet"
-    #ASO observations
-    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/Processed_SWE/{region}"
-    #nearest snotel path
-    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
+    cols = ['cell_id', 'x', 'y']
+    ASO_meta_loc_DF = ASO_meta_loc_DF[cols]
 
-    #Get sites/snotel observations from 2013-2019
-    print('Loading observations from 2013-2019')
-    try:
-        snotel_data = pd.read_csv(Snotelobs_path)
-    except:
-        print("Snotel obs not found, retreiving from AWS S3")
-        if not os.path.exists(snotel_path):
-            os.makedirs(snotel_path, exist_ok=True)
-        key = "NSMv2.0"+Snotelobs_path.split("SWEMLv2.0",1)[1]        
-        S3.meta.client.download_file(BUCKET_NAME, key,Snotelobs_path)
-        snotel_data = pd.read_csv(Snotelobs_path)
+    print(f"Converting to geodataframe")
+    aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['x'], ASO_meta_loc_DF['y'])]
+    aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry)
+    
+    #renaming columns x/y to lat/long
+    aso_gdf.rename(columns = {'y':'cen_lat', 'x':'cen_lon'}, inplace = True)
 
-    #Load dictionary of nearest sites
-    print(f"Loading {output_res}M resolution grids for {region} region")
-    with open(f"{nearest_snotel_dict_path}/nearest_SNOTEL.pkl", 'rb') as handle:
-        nearest_snotel = pickle.load(handle)
+    return aso_gdf
 
-    #Processing SNOTEL Obs to correct date/time
-    print('Processing datetime component of SNOTEL observation dataframe')
-    date_columns = snotel_data.columns[1:]
-    new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
-    snotel_data_f = snotel_data.rename(columns=new_column_names)
 
-    #create data 
-    final_df = pd.DataFrame()
-    #aso_gdf = pd.DataFrame()
+#Processing using gdal
+def process_single_location(args):
+    #lat, lon, index_id, tiles = args
+    cell_id, lat, lon, tiles = args
+    #print(lat, lon, index_id, tiles)
 
-    print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
-    for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):      
-        timestamp = aso_swe_file.split('_')[-1].split('.')[0]
+    #signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+    signed_asset = planetary_computer.sign(tiles)
+    elevation = rxr.open_rasterio(signed_asset.href)
+    
+    slope = elevation.copy()
+    aspect = elevation.copy()
 
-        #load in SWE data from ASO
-        aso_swe_data = pd.read_csv(os.path.join(aso_swe_files_folder_path, aso_swe_file))
-        #aso_gdf = load_aso_snotel_geometry(aso_swe_file, aso_swe_files_folder_path)
-        if dropna == True:
-            aso_swe_data.dropna(inplace=True)
-            aso_swe_data = aso_swe_data[aso_swe_data['swe'] >= 0]
-            aso_swe_data.reset_index(inplace=True)
-        transposed_data = {}
+    transformer = Transformer.from_crs("EPSG:4326", elevation.rio.crs, always_xy=True)
+    xx, yy = transformer.transform(lon, lat)
 
-        if timestamp in new_column_names.values():
-            print(f"Connecting ASO observations and Snotel observations for {timestamp}")
-            for row in tqdm(np.arange(0, len(aso_swe_data),1)):
-                cell_id = aso_swe_data.loc[0]['cell_id']
-                station_ids = nearest_snotel[cell_id]
-                selected_snotel_data = snotel_data_f[['station_id', timestamp]].loc[snotel_data_f['station_id'].isin(station_ids)]
-                station_mapping = {old_id: f"nearest site {i+1}" for i, old_id in enumerate(station_ids)}
-                
-                # Rename the station IDs in the selected SNOTEL data
-                selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
+    tilearray = np.around(elevation.values[0]).astype(int)
+    geo = (math.floor(float(lon)), 90, 0.0, math.ceil(float(lat)), 0.0, -90)
 
-                # Transpose and set the index correctly
-                transposed_data[cell_id] = selected_snotel_data.set_index('station_id').T
-            
-            #Convert dictionary of sites to dataframe
-            transposed_df = pd.concat(transposed_data, axis=0)
+    driver = gdal.GetDriverByName('MEM')
+    temp_ds = driver.Create('', tilearray.shape[1], tilearray.shape[0], 1, gdalconst.GDT_Float32)
 
-            # Reset index and rename columns
-            transposed_df.reset_index(inplace = True)
-            transposed_df.rename(columns={'level_0': 'cell_id', 'level_1': 'Date'}, inplace = True)
-            transposed_df['Date'] = pd.to_datetime(transposed_df['Date'])
+    temp_ds.GetRasterBand(1).WriteArray(tilearray)
 
-            aso_swe_data['Date'] = pd.to_datetime(timestamp)
-            aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
-            merged_df = pd.merge(aso_swe_data, transposed_df, how='left', on=['cell_id', 'Date'])
+    tilearray_np = temp_ds.GetRasterBand(1).ReadAsArray()
+    grad_y, grad_x = gradient(tilearray_np)
 
-            final_df = pd.concat([final_df, merged_df], ignore_index=True)
+    # Calculate slope and aspect
+    slope_arr = np.sqrt(grad_x**2 + grad_y**2)
+    aspect_arr = rad2deg(arctan2(-grad_y, grad_x)) % 360 
+    
+    slope.values[0] = slope_arr
+    aspect.values[0] = aspect_arr
 
-        else:
-            aso_swe_data['Date'] = pd.to_datetime(timestamp)
-            aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
+    elev = round(elevation.sel(x=xx, y=yy, method="nearest").values[0])
+    slop = round(slope.sel(x=xx, y=yy, method="nearest").values[0])
+    asp = round(aspect.sel(x=xx, y=yy, method="nearest").values[0])
 
-            # No need to merge in this case, directly concatenate
-            final_df = pd.concat([final_df, aso_swe_data], ignore_index=True)
+    return cell_id, elev, slop, asp
 
-    final_df.to_csv(f"{nearest_snotel_dict_path}/ASO_Obs_DF.parquet")
-    return final_df
+def extract_terrain_data_threaded(metadata_df, region, max_workers=1000):
+    global elevation_cache 
+    elevation_cache = {} 
+
+    print('Calculating dataframe bounding box')
+    bounding_box = metadata_df.geometry.total_bounds
+    min_x, min_y, max_x, max_y = bounding_box[0], bounding_box[1], bounding_box[2], bounding_box[3]
+    
+    client = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            ignore_conformance=True,
+        )
+
+    search = client.search(
+                    collections=["cop-dem-glo-90"],
+                    intersects = {
+                            "type": "Polygon",
+                            "coordinates": [[
+                            [min_x, min_y],
+                            [max_x, min_y],
+                            [max_x, max_y],
+                            [min_x, max_y],
+                            [min_x, min_y]  
+                        ]]})
+
+    tiles = list(search.items())
+
+    DEMs = []
+
+    print("Retrieving Copernicus 90m DEM tiles")
+    for i in tqdm(range(0, len(tiles))):
+        row = [i, tiles[i].id]
+        DEMs.append(row)
+    DEMs = pd.DataFrame(columns = ['sliceID', 'tileID'], data = DEMs)
+    DEMs = DEMs.set_index(DEMs['tileID'])
+    del DEMs['tileID']
+    print(f"There are {len(DEMs)} tiles in the region")
+
+    print("Interpolating Grid Cell Spatial Features")
+    
+    results = []
+    with cf.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Start the load operations and mark each future with its process function
+        jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], tiles[int(DEMs.iloc[0]['sliceID'])].assets["data"])): 
+                i for i in tqdm(range(len(metadata_df)))}
+        
+        print(f"Job complete for getting geospatial metadata, processing dataframe")
+        for job in tqdm(cf.as_completed(jobs)):
+            results.append(job.result())
+
+    meta = pd.DataFrame(results, columns=['cell_id', 'Elevation_m', 'Slope_Deg', 'Aspect_Deg'])
+    meta.set_index('cell_id', inplace=True)
+    metadata_df.set_index('cell_id', inplace=True)
+    metadata_df = pd.concat([metadata_df, meta], axis = 1)
+
+    #save regional dataframe
+    dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
+    print(f"Saving {region} dataframe in {dfpath}")
+    metadata_df.to_csv(f"{dfpath}/{region}_metadata.parquet")
+        
+    return metadata_df
 
