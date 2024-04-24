@@ -111,7 +111,7 @@ class ASODataTool:
             quit()
 
     def cmr_download(self, directory, region):
-        dpath = f"{HOME}/SWEML/data/NSMv2.0/data/ASO/{directory}/{region}"
+        dpath = f"{HOME}/SWEMLv2.0/data/ASO/{directory}/{region}"
         if not os.path.exists(dpath):
             os.makedirs(dpath, exist_ok=True)
 
@@ -119,13 +119,16 @@ class ASODataTool:
 
     @staticmethod
     def get_bounding_box(region):
+        dpath = f"{HOME}/SWEMLv2.0/data/PreProcessed"
         try:
-            regions = pd.read_pickle(f"{HOME}/SWEML/data/PreProcessed/RegionVal.pkl")
+            regions = pd.read_pickle(f"{dpath}/RegionVal.pkl")
         except:
             print('File not local, getting from AWS S3.')
+            if not os.path.exists(dpath):
+                os.makedirs(dpath, exist_ok=True)
             key = f"data/PreProcessed/RegionVal.pkl"            
-            S3.meta.client.download_file(BUCKET_NAME, key,f"{HOME}/SWEML/data/PreProcessed/RegionVal.pkl")
-            regions = pd.read_pickle(f"{HOME}/SWEML/data/PreProcessed/RegionVal.pkl")
+            S3.meta.client.download_file(BUCKET_NAME, key,f"{dpath}/RegionVal.pkl")
+            regions = pd.read_pickle(f"{dpath}/RegionVal.pkl")
 
 
         
@@ -219,7 +222,7 @@ class ASODataProcessing:
     def convert_tiff_to_csv(input_folder, output_res, region):
 
         #curr_dir = os.getcwd()
-        dir = f"{HOME}/SWEML/data/NSMv2.0/data/ASO/"
+        dir = f"{HOME}/SWEMLv2.0/data/ASO/"
         folder_path = os.path.join(dir, input_folder)
         
         # Check if the folder exists and is not empty
@@ -261,26 +264,28 @@ class ASODataProcessing:
                         (row['UR_Coord_Long'], row['UR_Coord_Lat']),
                         (row['UL_Coord_Long'], row['UL_Coord_Lat'])])
 
-    def process_folder(self, input_folder, metadata_path, output_folder):
-        # Import the metadata into a pandas DataFrame
+    def process_folder(self, input_folder, metadata_file, output_folder):
 
-        '''
-        input_folder = f"ASO/100M_SWE_csv"
-        metadata_path = f"Provided_Data/grid_cells_meta.csv"
-        output_folder = f"Processed_SWE"
-        '''
-        
-        input_folder = f"{HOME}/SWEML/data/NSMv2.0/data/{input_folder}"
-        metadata_path = f"{HOME}/SWEML/data/NSMv2.0/data/{metadata_path}"
-        output_folder = f"{HOME}/SWEML/data/NSMv2.0/data/{output_folder}"
-        
+        # Import the metadata into a pandas DataFrame
+        input_folder = f"{HOME}/SWEMLv2.0/data/{input_folder}"
+        metadata_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs"
+        output_folder = f"{HOME}/SWEMLv2.0/data/{output_folder}"
+
+        if not os.path.exists(input_folder):
+            os.makedirs(input_folder, exist_ok=True)
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder, exist_ok=True)
+
         try:
-            pred_obs_metadata_df = pd.read_csv(metadata_path)
+            pred_obs_metadata_df = pd.read_csv(f"{metadata_path}/grid_cells_meta.csv")
         except:
             print("metadata not found, retreiving from AWS S3")
-            key = "NSMv2.0"+metadata_path.split("NSMv2.0",1)[1]        
-            S3.meta.client.download_file(BUCKET_NAME, key,metadata_path)
-            pred_obs_metadata_df = pd.read_csv(metadata_path)
+            key = "NSMv2.0"+metadata_path.split("SWEMLv2.0",1)[1]
+            print(f"{key}/grid_cells_meta.csv")
+            if not os.path.exists(metadata_path):
+                os.makedirs(metadata_path, exist_ok=True)
+            S3.meta.client.download_file(BUCKET_NAME, f"{key}/grid_cells_meta.csv",f"{metadata_path}/grid_cells_meta.csv")
+            pred_obs_metadata_df = pd.read_csv(f"{metadata_path}/grid_cells_meta.csv")
 
         # Assuming create_polygon is defined elsewhere, we add a column with polygon geometries
         print("Applying polygon geometries, please be patient, this step can take a few minutes...")
