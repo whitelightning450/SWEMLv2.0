@@ -159,14 +159,14 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res,max_workers = None):
     
     #create dataframe
     print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
-    aso_swe_files = [
-        f"ASO_100M_SWE_20130403.csv",
-         f"ASO_100M_SWE_20130429.csv",
-        # f"ASO_100M_SWE_20130503.csv"
-    ]
-    # aso_swe_files = []
-    # for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):  #add file names to aso_swe_files
-    #     aso_swe_files.append(aso_swe_file)
+    # aso_swe_files = [
+    #     f"ASO_100M_SWE_20130403.csv",
+    #      f"ASO_100M_SWE_20130429.csv",
+    #     # f"ASO_100M_SWE_20130503.csv"
+    # ]
+    aso_swe_files = []
+    for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):  #add file names to aso_swe_files
+        aso_swe_files.append(aso_swe_file)
 
     print(f"Connecting {len(aso_swe_files)} timesteps of observations for {region}")
     Obsdf = pd.DataFrame()
