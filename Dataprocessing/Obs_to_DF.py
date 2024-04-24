@@ -83,11 +83,8 @@ BUCKET_NAME = 'national-snow-model'
 BUCKET = S3.Bucket(BUCKET_NAME)
 
 
+#Multi thred this function!!!
 
-
-
-
-#This likely needs to be a new .py file...
 def Nearest_Snotel_2_obs(region, output_res, dropna = True):    
     print('Connecting site observations with nearest monitoring network obs')
 
@@ -111,6 +108,19 @@ def Nearest_Snotel_2_obs(region, output_res, dropna = True):
         S3.meta.client.download_file(BUCKET_NAME, key,Snotelobs_path)
         snotel_data = pd.read_csv(Snotelobs_path)
 
+    #Get Geospatial meta data
+    print(f"Loading goeospatial meta data for grids in {region}")
+    geodf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
+    try:
+        aso_gdf = pd.read_csv(f"{geodf_path}/{region}_metadata.parquet")
+    except:
+        print("Snotel obs not found, retreiving from AWS S3")
+        if not os.path.exists(snotel_path):
+            os.makedirs(snotel_path, exist_ok=True)
+        key = "NSMv2.0"+geodf_path.split("SWEMLv2.0",1)[1]        
+        S3.meta.client.download_file(BUCKET_NAME, key,f"{geodf_path}/{region}_metadata.parquet")
+        aso_gdf = pd.read_csv(Snotelobs_path)
+
     #Load dictionary of nearest sites
     print(f"Loading {output_res}M resolution grids for {region} region")
     with open(f"{nearest_snotel_dict_path}/nearest_SNOTEL.pkl", 'rb') as handle:
@@ -121,31 +131,34 @@ def Nearest_Snotel_2_obs(region, output_res, dropna = True):
     date_columns = snotel_data.columns[1:]
     new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
     snotel_data_f = snotel_data.rename(columns=new_column_names)
-
-    #create data 
-    final_df = pd.DataFrame()
-    #aso_gdf = pd.DataFrame()
-
+    
+    #create dataframe
     print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
-    for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):      
+    Obsdf = pd.DataFrame()
+
+    for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
+    # test_timestamps = [
+    #     f"{aso_swe_files_folder_path}/ASO_100M_SWE_20130403.csv"
+    # ]
+
+    # for aso_swe_file in tqdm(test_timestamps):
+          
         timestamp = aso_swe_file.split('_')[-1].split('.')[0]
 
         #load in SWE data from ASO
         aso_swe_data = pd.read_csv(os.path.join(aso_swe_files_folder_path, aso_swe_file))
-        #aso_gdf = load_aso_snotel_geometry(aso_swe_file, aso_swe_files_folder_path)
-        if dropna == True:
-            aso_swe_data.dropna(inplace=True)
-            aso_swe_data = aso_swe_data[aso_swe_data['swe'] >= 0]
-            aso_swe_data.reset_index(inplace=True)
+        aso_swe_data.dropna(inplace=True)
+        aso_swe_data = aso_swe_data[aso_swe_data['swe'] >= 0]
+        aso_swe_data.reset_index(inplace=True)
         transposed_data = {}
 
         if timestamp in new_column_names.values():
             print(f"Connecting ASO observations and Snotel observations for {timestamp}")
             for row in tqdm(np.arange(0, len(aso_swe_data),1)):
-                cell_id = aso_swe_data.loc[0]['cell_id']
+                cell_id = aso_swe_data.loc[row]['cell_id']
                 station_ids = nearest_snotel[cell_id]
                 selected_snotel_data = snotel_data_f[['station_id', timestamp]].loc[snotel_data_f['station_id'].isin(station_ids)]
-                station_mapping = {old_id: f"nearest site {i+1}" for i, old_id in enumerate(station_ids)}
+                station_mapping = {old_id: f"nearest_site_{i+1}" for i, old_id in enumerate(station_ids)}
                 
                 # Rename the station IDs in the selected SNOTEL data
                 selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
@@ -165,14 +178,24 @@ def Nearest_Snotel_2_obs(region, output_res, dropna = True):
             aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
             merged_df = pd.merge(aso_swe_data, transposed_df, how='left', on=['cell_id', 'Date'])
 
-            final_df = pd.concat([final_df, merged_df], ignore_index=True)
+            Obsdf = pd.concat([Obsdf, merged_df], ignore_index=True)
 
         else:
             aso_swe_data['Date'] = pd.to_datetime(timestamp)
             aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
 
             # No need to merge in this case, directly concatenate
-            final_df = pd.concat([final_df, aso_swe_data], ignore_index=True)
+            Obsdf = pd.concat([Obsdf, aso_swe_data], ignore_index=True)
 
-    final_df.to_csv(f"{nearest_snotel_dict_path}/ASO_Obs_DF.parquet")
+    print(f"Connecting dataframe with geospatial features...")
+    #combine df with geospatial meta data
+    final_df = pd.merge(Obsdf, aso_gdf, on = 'cell_id', how = 'left')
+    cols = [
+        'cell_id', 'Date',  'cen_lat', 'cen_lon', 'geometry', 'Elevation_m', 'Slope_Deg',
+       'Aspect_Deg', 'swe', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
+       'nearest_site_5', 'nearest_site_6'
+      ]
+    final_df = final_df[cols]
+    
+    final_df.to_csv(f"{nearest_snotel_dict_path}/{region}_Training_DF.parquet")
     return final_df
