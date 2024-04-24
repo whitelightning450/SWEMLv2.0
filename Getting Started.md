@@ -44,32 +44,6 @@ Since we will be using Jupyter Notebooks for this exercise, we will use the Anac
 We suggest using Mamba rather than conda for installs, conda may be used but will take longer.
 In the command line type: 
 
-    mamba create -n SWEML_env python=3.9.12
-
-For this example, we will be using Python version 3.9.12, specify this version when setting up your new virtual environment.
-After Anaconda finishes setting up your SWEML_env , activate it using the activate function.
-
-    mamba activate SWEML_env 
-
-You should now be working in your new SWEML_env within the command prompt. 
-However, we will want to work in this environment within our Jupyter Notebook and need to create a kernel to connect them.
-We begin by installing the **ipykernel** python package:
-
-    pip install --user ipykernel
-
-With the package installed, we can connect the SWEML_env to our Python Notebook
-
-    python -m ipykernel install --user --name=SWEML_env 
-
-Under contributors, there is a start to finish example to get participants up to speed on the modeling workflow.
-To double check you have the correct working environment, open the  up the [Methods](./contributors/NSM_Example/methods.ipynb) file, click the kernel tab on the top toolbar, and select the SWEML_env. 
-The SWEML_env should show up on the top right of the Jupyter Notebook.
-
-
-### Loading other Python dependencies
-We will now be installing the packages needed to use SWEML_env, as well as other tools to accomplish data science tasks.
-Enter the following code block in your terminal to get the required dependencies with the appropriate versions, note, you must be in the correct working directory:
-
     mamba env create -f SWEML_env2.yaml 
 
 ### Connect to AWS
