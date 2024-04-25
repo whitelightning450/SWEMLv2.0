@@ -95,7 +95,7 @@ def calculate_nearest_snotel(region, aso_gdf, snotel_gdf, n=6, distance_cache=No
         distance_cache = {}
 
     nearest_snotel = {}
-    print('Calculating haversine distance from each cell to in situ OBS, and saving cell-obs relationships in dictionary')
+    print(f"Calculating haversine distance for {len(aso_gdf)} locations to in situ OBS, and saving cell-obs relationships in dictionary")
     for idx, aso_row in tqdm(aso_gdf.iterrows()):
         cell_id = idx
         # Check if distances for this cell_id are already calculated and cached
@@ -227,11 +227,17 @@ def GeoSpatial(region):
 #Processing using gdal
 def process_single_location(args):
     #lat, lon, index_id, tiles = args
-    cell_id, lat, lon, tiles = args
+    cell_id, lat, lon, DEMs, tiles = args
     #print(lat, lon, index_id, tiles)
+    
+    #maybe thorugh a try/except here, look up how to find copernicus data
+    tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
+    # print(tile_id)
+    # display(DEMs)
+    index_id = DEMs.loc[tile_id]['sliceID']
 
-    #signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
-    signed_asset = planetary_computer.sign(tiles)
+    signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+    #signed_asset = planetary_computer.sign(tiles)
     elevation = rxr.open_rasterio(signed_asset.href)
     
     slope = elevation.copy()
@@ -264,7 +270,7 @@ def process_single_location(args):
 
     return cell_id, elev, slop, asp
 
-def extract_terrain_data_threaded(metadata_df, region, max_workers=1000):
+def extract_terrain_data_threaded(metadata_df, region):
     global elevation_cache 
     elevation_cache = {} 
 
@@ -302,12 +308,13 @@ def extract_terrain_data_threaded(metadata_df, region, max_workers=1000):
     del DEMs['tileID']
     print(f"There are {len(DEMs)} tiles in the region")
 
-    print("Interpolating Grid Cell Spatial Features")
+    print("Determining Grid Cell Spatial Features")
+
     
     results = []
-    with cf.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Start the load operations and mark each future with its process function
-        jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], tiles[int(DEMs.iloc[0]['sliceID'])].assets["data"])): 
+    with cf.ThreadPoolExecutor(max_workers=None) as executor:
+        jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles)): 
+
                 i for i in tqdm(range(len(metadata_df)))}
         
         print(f"Job complete for getting geospatial metadata, processing dataframe")
