@@ -13,6 +13,9 @@ import time
 import getpass
 import shutil
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import concurrent.futures as cf
 
 try:
     from urllib.parse import urlparse
@@ -166,65 +169,66 @@ def get_login_response(url, credentials):
 
     return response
 
-def cmr_download(urls, folder, quiet=False):
-    if not urls:
+def cmr_download(url,credentials, folder, region, quiet=False): #This could be multithreaded
+    if not url:
         return
 
     # Create the target directory if it doesn't exist
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    if not quiet:
-        print('Downloading {0} files to {1}...'.format(len(urls), folder))
+    # if not quiet:
+    #     print('Downloading {0} files to {1}...'.format(len(url), folder))
 
-    credentials = get_credentials()
+    #credentials = get_credentials()
 
-    for index, url in enumerate(urls, start=1):
-        filename = os.path.join(folder, url.split('/')[-1])  # Specify the full path to the file
+    # for index, url in enumerate(urls, start=1):
+    #     filename = os.path.join(folder, url.split('/')[-1])  # Specify the full path to the file
+    #     if not quiet:
+    #         print('{0}/{1}: {2}'.format(str(index).zfill(len(str(len(urls)))), len(urls), filename))
+    filename = os.path.join(folder, url.split('/')[-1])  # Specify the full path to the file
+    # if not quiet:
+    #     print('{0}/{1}: {2}'.format(str(index).zfill(len(str(len(url)))), len(url), filename))
+
+    try:
+        response = get_login_response(url, credentials)
+        length = int(response.headers['content-length'])
+        count = 0
+        chunk_size = min(max(length, 1), 1024 * 1024)
+        time_initial = time.time()
+        with open(filename, 'wb') as out_file:
+            for data in cmr_read_in_chunks(response, chunk_size=chunk_size):
+                out_file.write(data)
+                if not quiet:
+                    count = count + 1
+                    time_elapsed = time.time() - time_initial
+                    download_speed = get_speed(time_elapsed, count * chunk_size)
+                    output_progress(count, math.ceil(length / chunk_size), status=download_speed)
+
         if not quiet:
-            print('{0}/{1}: {2}'.format(str(index).zfill(len(str(len(urls)))), len(urls), filename))
+            print()
+    except HTTPError as e:
+        print('HTTP error {0}, {1}'.format(e.code, e.reason))
+    except URLError as e:
+        print('URL error: {0}'.format(e.reason))
+    except IOError:
+        raise
 
-        try:
-            response = get_login_response(url, credentials)
-            length = int(response.headers['content-length'])
-            count = 0
-            chunk_size = min(max(length, 1), 1024 * 1024)
-            time_initial = time.time()
-            with open(filename, 'wb') as out_file:
-                for data in cmr_read_in_chunks(response, chunk_size=chunk_size):
-                    out_file.write(data)
-                    if not quiet:
-                        count = count + 1
-                        time_elapsed = time.time() - time_initial
-                        download_speed = get_speed(time_elapsed, count * chunk_size)
-                        output_progress(count, math.ceil(length / chunk_size), status=download_speed)
-
-            if not quiet:
-                print()
-        except HTTPError as e:
-            print('HTTP error {0}, {1}'.format(e.code, e.reason))
-        except URLError as e:
-            print('URL error: {0}'.format(e.reason))
-        except IOError:
-            raise
-
-    orgnl_directory = folder
-    destination_directory = 'SWE_Data_xml'
+    destination_directory  = f"{HOME}/SWEMLv2.0/data/ASO/{region}/ASO_xml"
 
     if not os.path.exists(destination_directory):
         os.makedirs(destination_directory)
 
-    files = os.listdir(orgnl_directory)
+    files = os.listdir(folder)
 
     for file in files:
         if file.endswith('.xml'):
-            source_file_path = os.path.join(orgnl_directory, file)
+            source_file_path = os.path.join(folder, file)
             destination_file_path = os.path.join(destination_directory, file)
 
             # Move the file to the destination directory
             shutil.move(source_file_path, destination_file_path)
 
-    print("Files with .xml extension moved to the destination folder.")
 
             
 def cmr_filter_urls(search_results):
