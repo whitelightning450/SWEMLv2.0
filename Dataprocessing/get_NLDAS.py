@@ -14,7 +14,7 @@ HOME = os.path.expanduser('~')
 
 def GetSeasonalAccumulatedPrecipSingleSite(args):
     #get function inputs
-    precip, output_res, lat, lon, Precippath, cell_id = args
+    precip, output_res, lat, lon, Precippath, cell_id, year, dates = args
 
     #unit conversions and temporal frequency
     temporal_resample = 'D'
@@ -39,16 +39,26 @@ def GetSeasonalAccumulatedPrecipSingleSite(args):
     #get seasonal accumulated precipitation for site
     site_precip['season_precip'] = site_precip['daily_precipitation_cm'].cumsum()
 
-    with pd.HDFStore( f"{Precippath}/WY{str(year)}.h5", complevel=9, complib='zlib') as store:
-        store[cell_id] = site_precip
+    #be aware of file storage, save only dates lining up with ASO obs
+    mask = site_precip['datetime'].isin(dates)
+    site_precip = site_precip[mask].reset_index(drop = True)
 
-    return site_precip
+    #subset to only dates with obs to reduce file size
+    mask = site_precip['datetime'].isin(dates)
+    site_precip = site_precip[mask].reset_index(drop = True)
+
+    site_precip.to_csv(f"{Precippath}/{cell_id}.parquet")  #hdf or pkl these in a separate step?
+
+    # with pd.HDFStore( f"{Precippath}/WY{str(year)}.h5", complevel=9, complib='zlib') as store:
+    #     store[cell_id] = site_precip
+
+    
 
 def get_precip_threaded(year, region, output_res):
     #  #ASO file path
     aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{output_res}M_SWE_csv/{region}"
     #make directory for data 
-    Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip"
+    Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/{year}"
     if not os.path.exists(Precippath):
         os.makedirs(Precippath, exist_ok=True)
     
@@ -64,19 +74,22 @@ def get_precip_threaded(year, region, output_res):
 
     startdate = f"{year-1}-10-01"
     #search for files for water year and get last date, this works because no ASO obs in sep, oct, nov, dec
-    end = [x for x in aso_swe_files if str(year) in x][-1]
-    month = end[-8:-6]
-    day = end[-6:-4]
-    enddate = f"{str(year)}-{month}-{day}"
+    files = [x for x in aso_swe_files if str(year) in x]
+    dates = []
+    for file in files:
+        month = file[-8:-6]
+        day = file[-6:-4]
+        enddate = f"{str(year)}-{month}-{day}"
+        dates.append(enddate)
+    enddate = dates[-1]
 
     #NLDAS precipitation
     precip = ee.ImageCollection('NASA/NLDAS/FORA0125_H002').select('total_precipitation').filterDate(startdate, enddate)
 
-    #args = (precip, output_res, lat, lon, Precippath, cell_id)
-    nsites = len(meta)
+    nsites = len(meta) #change this to all sites when ready
     print(f"Getting daily precipitation data for {nsites} sites")
     with cf.ThreadPoolExecutor(max_workers=None) as executor:
-        jobs = {executor.submit(GetSeasonalAccumulatedPrecipSingleSite, (precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'],Precippath,  meta.iloc[i]['cell_id'])):
+        {executor.submit(GetSeasonalAccumulatedPrecipSingleSite, (precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'],Precippath,  meta.iloc[i]['cell_id'], year, dates)):
                 i for i in tqdm(range(nsites))}
         
-    print(f"Job complete for getting precipiation datdata")
+    print(f"Job complete for getting precipiation datdata, all precipitation data can be found in {Precippath}")
