@@ -107,10 +107,17 @@ def process_single_timestamp(args):
     if not os.path.exists(obsdf_path):
         os.makedirs(obsdf_path, exist_ok=True)
 
-    Obsdf.to_csv(f"{obsdf_path}/{timestamp}_ObsDF.parquet")
-    return Obsdf
+    cols = [
+    'cell_id', 'Date', 'swe', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
+    'nearest_site_5', 'nearest_site_6'
+    ]
 
-def Nearest_Snotel_2_obs_MultiProcess(region, output_res,max_workers = None):    
+    Obsdf = Obsdf[cols]
+
+    Obsdf.to_csv(f"{obsdf_path}/{timestamp}_ObsDF.parquet")
+  
+
+def Nearest_Snotel_2_obs_MultiProcess(region, output_res):    
 
     print('Connecting site observations with nearest monitoring network obs')
     #get Snotel observations
@@ -133,19 +140,6 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res,max_workers = None):
         S3.meta.client.download_file(BUCKET_NAME, key,Snotelobs_path)
         snotel_data = pd.read_csv(Snotelobs_path)
 
-    #Get Geospatial meta data
-    print(f"Loading goeospatial meta data for grids in {region}")
-    geodf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
-    try:
-        aso_gdf = pd.read_csv(f"{geodf_path}/{region}_metadata.parquet")
-    except:
-        print("Snotel obs not found, retreiving from AWS S3")
-        if not os.path.exists(snotel_path):
-            os.makedirs(snotel_path, exist_ok=True)
-        key = "NSMv2.0"+geodf_path.split("SWEMLv2.0",1)[1]        
-        S3.meta.client.download_file(BUCKET_NAME, key,f"{geodf_path}/{region}_metadata.parquet")
-        aso_gdf = pd.read_csv(Snotelobs_path)
-
     #Load dictionary of nearest sites
     print(f"Loading {output_res}M resolution grids for {region} region")
     with open(f"{nearest_snotel_dict_path}/nearest_SNOTEL.pkl", 'rb') as handle:
@@ -159,11 +153,6 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res,max_workers = None):
     
     #create dataframe
     print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
-    # aso_swe_files = [
-    #     f"ASO_100M_SWE_20130403.csv",
-    #      f"ASO_100M_SWE_20130429.csv",
-    #     # f"ASO_100M_SWE_20130503.csv"
-    # ]
     aso_swe_files = []
     for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):  #add file names to aso_swe_files
         aso_swe_files.append(aso_swe_file)
@@ -171,26 +160,15 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res,max_workers = None):
     print(f"Connecting {len(aso_swe_files)} timesteps of observations for {region}")
     Obsdf = pd.DataFrame()
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
-    with cf.ProcessPoolExecutor(max_workers=max_workers) as executor: 
+    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
         # Start the load operations and mark each future with its process function
-        jobs = [executor.submit(process_single_timestamp, (aso_swe_files[i],new_column_names, snotel_data_f, region, nearest_snotel, Obsdf)) for i in tqdm(range(len(aso_swe_files)))]
+        [executor.submit(process_single_timestamp, (aso_swe_files[i],new_column_names, snotel_data_f, region, nearest_snotel, Obsdf)) for i in tqdm(range(len(aso_swe_files)))]
         
-        print(f"Job complete for connecting SNOTEL obs to sites/dates, processing into dataframe")
-        for job in tqdm(cf.as_completed(jobs)):
-            Obsdf = pd.concat([Obsdf,job.result()])
+        print(f"Job complete for connecting SNOTEL obs to sites/dates")
+    #     for job in tqdm(cf.as_completed(jobs)):
+    #         Obsdf = pd.concat([Obsdf,job.result()])
 
-    print(f"Connecting dataframe with geospatial features...")
-    #combine df with geospatial meta data
-    final_df = pd.merge(Obsdf, aso_gdf, on = 'cell_id', how = 'left')
-    cols = [
-        'cell_id', 'Date',  'cen_lat', 'cen_lon', 'geometry', 'Elevation_m', 'Slope_Deg',
-       'Aspect_Deg', 'swe', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
-       'nearest_site_5', 'nearest_site_6'
-      ]
-    final_df = final_df[cols]
-    
-    final_df.to_csv(f"{nearest_snotel_dict_path}/{region}_Training_DF.parquet")
-    return final_df
+
 
 
 
