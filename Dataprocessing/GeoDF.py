@@ -333,3 +333,51 @@ def extract_terrain_data_threaded(metadata_df, region):
         
     return metadata_df
 
+
+def add_geospatial_threaded(region, output_res):
+    # Processed ASO observations folder with snotel measurements
+    TrainingDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
+    GeoObsdfs = f"{TrainingDFpath}/GeoObsDFs"
+
+    #Make directory
+    if not os.path.exists(GeoObsdfs):
+        os.makedirs(GeoObsdfs, exist_ok=True)
+
+    #Get Geospatial meta data
+    print(f"Loading goeospatial meta data for grids in {region}")
+    aso_gdf = pd.read_csv(f"{TrainingDFpath}/{region}_metadata.parquet")
+
+    #create dataframe
+    print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
+    aso_swe_files = []
+    for aso_swe_file in tqdm(os.listdir(f"{TrainingDFpath}/Obsdf")):  #add file names to aso_swe_files
+        aso_swe_files.append(aso_swe_file)
+    print(f"Concatenating {len(aso_swe_files)} with geospatial data...")
+    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+        # Start the load operations and mark each future with its process function
+        [executor.submit(add_geospatial_single, (f"{TrainingDFpath}/Obsdf", aso_swe_files[i], aso_gdf,GeoObsdfs)) for i in tqdm(range(len(aso_swe_files)))]
+        
+        print(f"Job complete for connecting obs with geospatial data, the files can be found in {GeoObsdfs}")
+    
+
+
+def add_geospatial_single(args):
+
+    aso_swe_path, aso_swe_file, aso_gdf, GeoObsdfs = args
+
+    ObsDF = pd.read_csv(f"{aso_swe_path}/{aso_swe_file}")
+
+ 
+    #combine df with geospatial meta data
+    final_df = pd.merge(ObsDF, aso_gdf, on = 'cell_id', how = 'left')
+    cols = [
+        'cell_id', 'Date',  'cen_lat', 'cen_lon', 'geometry', 'Elevation_m', 'Slope_Deg',
+        'Aspect_Deg', 'swe', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
+        'nearest_site_5', 'nearest_site_6'
+        ]
+    final_df = final_df[cols]
+
+    #display(final_df)
+
+    final_df.to_csv(f"{GeoObsdfs}/GeoObsdfs_{aso_swe_file[:8]}.parquet")
+
