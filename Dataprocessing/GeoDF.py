@@ -4,6 +4,8 @@ import numpy as np
 from numpy import gradient, rad2deg, arctan2
 import xarray as xr
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # Vector Packages
 import geopandas as gpd
@@ -151,9 +153,9 @@ def create_polygon(row):
                         (row['UR_Coord_Long'], row['UR_Coord_Lat']),
                         (row['UL_Coord_Long'], row['UL_Coord_Lat'])])
 
-def fetch_snotel_sites_for_cellids(region):  
+def fetch_snotel_sites_for_cellids(region, output_res):  
     #relative file paths
-    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/Processed_SWE/{region}"
+    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
     snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
     Snotelmeta_path = f"{snotel_path}ground_measures_metadata.csv"
     
@@ -174,21 +176,25 @@ def fetch_snotel_sites_for_cellids(region):
     #build in method for adding to existing dictionary rather than rerunning for entire region...
     print('Loading all Geospatial prediction/observation files and concatenating into one dataframe')
     for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
-        aso_file = pd.read_csv(os.path.join(aso_swe_files_folder_path, aso_swe_file))
+        aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file), engine='fastparquet')
         ASO_meta_loc_DF = pd.concat([ASO_meta_loc_DF, aso_file])
     
     #removing bad ASO sites
-    print(f"Removing nan ASO sites and saving geodataframe to TrainingDFs {region} folder.")
-    ASO_meta_loc_DF = ASO_meta_loc_DF[ASO_meta_loc_DF['swe']>=0]
+    # print(f"Removing nan ASO sites and saving geodataframe to TrainingDFs {region} folder.")
+    # ASO_meta_loc_DF = ASO_meta_loc_DF[ASO_meta_loc_DF['swe']>=0]
     
     print('Identifying unique sites to create geophysical information dataframe') 
     ASO_meta_loc_DF.drop_duplicates(subset=['cell_id'], inplace=True)
     ASO_meta_loc_DF.set_index('cell_id', inplace=True)
-    ASO_meta_loc_DF.to_csv(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet")
+    #ASO_meta_loc_DF.to_csv(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet")
+    #Convert DataFrame to Apache Arrow Table
+    table = pa.Table.from_pandas(ASO_meta_loc_DF)
+    # Parquet with Brotli compression
+    pq.write_table(table, f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet", compression='BROTLI')
 
 
     print('converting to geodataframe')
-    aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['x'], ASO_meta_loc_DF['y'])]
+    aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['cen_lon'], ASO_meta_loc_DF['cen_lat'])]
     aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry)
 
     print('Loading SNOTEL metadata and processing snotel geometry')
@@ -209,17 +215,17 @@ def fetch_snotel_sites_for_cellids(region):
 
 def GeoSpatial(region):
     print(f"Loading geospatial data for {region}")
-    ASO_meta_loc_DF = pd.read_csv(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet")
+    ASO_meta_loc_DF = pd.read_parquet(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet", engine='fastparquet')
 
-    cols = ['cell_id', 'x', 'y']
+    cols = ['cell_id', 'cen_lat', 'cen_lon']
     ASO_meta_loc_DF = ASO_meta_loc_DF[cols]
 
     print(f"Converting to geodataframe")
-    aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['x'], ASO_meta_loc_DF['y'])]
+    aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['cen_lon'], ASO_meta_loc_DF['cen_lat'])]
     aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry)
     
     #renaming columns x/y to lat/long
-    aso_gdf.rename(columns = {'y':'cen_lat', 'x':'cen_lon'}, inplace = True)
+    #aso_gdf.rename(columns = {'y':'cen_lat', 'x':'cen_lon'}, inplace = True)
 
     return aso_gdf
 
@@ -329,7 +335,12 @@ def extract_terrain_data_threaded(metadata_df, region):
     #save regional dataframe
     dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
     print(f"Saving {region} dataframe in {dfpath}")
-    metadata_df.to_csv(f"{dfpath}/{region}_metadata.parquet")
+    #metadata_df.to_csv(f"{dfpath}/{region}_metadata.parquet")
+    # Save the DataFrame as a parquet file
+    #Convert DataFrame to Apache Arrow Table
+    table = pa.Table.from_pandas(metadata_df)
+    # Parquet with Brotli compression
+    pq.write_table(table, f"{dfpath}/{region}_metadata.parquet", compression='BROTLI')
         
     return metadata_df
 
@@ -345,7 +356,7 @@ def add_geospatial_threaded(region, output_res):
 
     #Get Geospatial meta data
     print(f"Loading goeospatial meta data for grids in {region}")
-    aso_gdf = pd.read_csv(f"{TrainingDFpath}/{region}_metadata.parquet")
+    aso_gdf = pd.read_parquet(f"{TrainingDFpath}/{region}_metadata.parquet", engine='fastparquet')
 
     #create dataframe
     print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
@@ -365,7 +376,7 @@ def add_geospatial_single(args):
 
     aso_swe_path, aso_swe_file, aso_gdf, GeoObsdfs = args
 
-    ObsDF = pd.read_csv(f"{aso_swe_path}/{aso_swe_file}")
+    ObsDF = pd.read_parquet(f"{aso_swe_path}/{aso_swe_file}", engine='fastparquet')
 
  
     #combine df with geospatial meta data
@@ -379,5 +390,36 @@ def add_geospatial_single(args):
 
     #display(final_df)
 
-    final_df.to_csv(f"{GeoObsdfs}/GeoObsdfs_{aso_swe_file[:8]}.parquet")
+    #final_df.to_csv(f"{GeoObsdfs}/GeoObsdfs_{aso_swe_file[:8]}.parquet")
+    #Convert DataFrame to Apache Arrow Table
+    table = pa.Table.from_pandas(final_df)
+    # Parquet with Brotli compression
+    pq.write_table(table, f"{GeoObsdfs}/GeoObsdfs_{aso_swe_file[:8]}.parquet", compression='BROTLI')
 
+def bounding_box(x_coordinate, y_coordinate, output_res):
+
+    degs = (output_res/111111)/2 #general formulat is three are 111,111m to one degree, divide by two because the given point is the centeroid
+    
+    '''returns 'BL_Coord_Long', 'BL_Coord_Lat', 
+             'BR_Coord_Long', 'BR_Coord_Lat', 
+             'UR_Coord_Long', 'UR_Coord_Lat', 
+              'UL_Coord_Long', 'UL_Coord_Lat']
+
+    '''
+    #Bottom left
+    BL_Coord_Long = x_coordinate-degs
+    BL_Coord_Lat = y_coordinate-degs
+
+    #Upper left
+    UL_Coord_Long = x_coordinate-degs
+    UL_Coord_Lat = y_coordinate+degs
+
+    #Upper right
+    UR_Coord_Long = x_coordinate+degs
+    UR_Coord_Lat = y_coordinate+degs
+
+    #Lower right
+    BR_Coord_Long = x_coordinate+degs
+    BR_Coord_Lat = y_coordinate-degs
+
+    return BL_Coord_Long, BL_Coord_Lat, BR_Coord_Long, BR_Coord_Lat, UR_Coord_Long, UR_Coord_Lat, UL_Coord_Long, UL_Coord_Lat
