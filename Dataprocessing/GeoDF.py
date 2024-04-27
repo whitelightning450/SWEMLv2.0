@@ -85,14 +85,10 @@ BUCKET_NAME = 'national-snow-model'
 BUCKET = S3.Bucket(BUCKET_NAME)
 
 
-# Calculating nearest SNOTEL sites
-def calculate_nearest_snotel(region, aso_gdf, snotel_gdf, n=6, distance_cache=None):
+# Calculating nearest SNOTEL sites, n = the number of snotel sites
+def calculate_nearest_snotel(region, aso_gdf, snotel_gdf,output_res, n=6, distance_cache=None):
 
-    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
-    #check to see if regional TrainingDF path exists, if not, make one
-    if not os.path.exists(nearest_snotel_dict_path):
-        os.makedirs(nearest_snotel_dict_path, exist_ok=True)
-
+    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
     if distance_cache is None:
         distance_cache = {}
 
@@ -116,7 +112,7 @@ def calculate_nearest_snotel(region, aso_gdf, snotel_gdf, n=6, distance_cache=No
     print(f"Saving nearest SNOTEL in {region} for each cell id in a pkl file")        
     with open(f"{nearest_snotel_dict_path}/nearest_SNOTEL.pkl", 'wb') as handle:
         pkl.dump(nearest_snotel, handle, protocol=pkl.HIGHEST_PROTOCOL)
-    #return nearest_snotel
+
 
 def haversine_vectorized(lat1, lon1, lat2, lon2):
     
@@ -190,7 +186,10 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     #Convert DataFrame to Apache Arrow Table
     table = pa.Table.from_pandas(ASO_meta_loc_DF)
     # Parquet with Brotli compression
-    pq.write_table(table, f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet", compression='BROTLI')
+    metapath =  f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    if not os.path.exists(metapath):
+        os.makedirs(metapath, exist_ok=True)
+    pq.write_table(table,f"{metapath}/ASO_meta.parquet", compression='BROTLI')
 
 
     print('converting to geodataframe')
@@ -210,14 +209,14 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     snotel_gdf = gpd.GeoDataFrame(snotel_file, geometry=snotel_geometry)
 
     # Calculating nearest SNOTEL sites
-    calculate_nearest_snotel(region,aso_gdf, snotel_gdf, n=6)
+    calculate_nearest_snotel(region,aso_gdf, snotel_gdf,output_res, n=6)
 
 
-def GeoSpatial(region):
+def GeoSpatial(region, output_res):
     print(f"Loading geospatial data for {region}")
-    ASO_meta_loc_DF = pd.read_parquet(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/ASO_meta.parquet", engine='fastparquet')
+    ASO_meta_loc_DF = pd.read_parquet(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/ASO_meta.parquet", engine='fastparquet')
 
-    cols = ['cell_id', 'cen_lat', 'cen_lon']
+    cols = ['cen_lat', 'cen_lon']
     ASO_meta_loc_DF = ASO_meta_loc_DF[cols]
 
     print(f"Converting to geodataframe")
@@ -232,17 +231,30 @@ def GeoSpatial(region):
 
 #Processing using gdal
 def process_single_location(args):
-    #lat, lon, index_id, tiles = args
     cell_id, lat, lon, DEMs, tiles = args
-    #print(lat, lon, index_id, tiles)
     
     #maybe thorugh a try/except here, look up how to find copernicus data
-    tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
-    # print(tile_id)
-    # display(DEMs)
-    index_id = DEMs.loc[tile_id]['sliceID']
+    try:
+        tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
+        index_id = DEMs.loc[tile_id]['sliceID']
 
-    signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+    except:
+        tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.floor(abs(lon)))}_00_DEM"
+        index_id = DEMs.loc[tile_id]['sliceID']
+        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+
+    else:
+        tile_id = f"Copernicus_DSM_COG_30_N{str(math.ceil(lat))}_00_W{str(math.floor(abs(lon)))}_00_DEM"
+        index_id = DEMs.loc[tile_id]['sliceID']
+        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+
+    finally:
+        tile_id = f"Copernicus_DSM_COG_30_N{str(math.ceil(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
+        index_id = DEMs.loc[tile_id]['sliceID']
+        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+
+
     #signed_asset = planetary_computer.sign(tiles)
     elevation = rxr.open_rasterio(signed_asset.href)
     
@@ -276,13 +288,14 @@ def process_single_location(args):
 
     return cell_id, elev, slop, asp
 
-def extract_terrain_data_threaded(metadata_df, region):
+def extract_terrain_data_threaded(metadata_df, region, output_res):
     global elevation_cache 
     elevation_cache = {} 
-
+    metadata_df.reset_index(inplace=True)
     print('Calculating dataframe bounding box')
     bounding_box = metadata_df.geometry.total_bounds
-    min_x, min_y, max_x, max_y = bounding_box[0], bounding_box[1], bounding_box[2], bounding_box[3]
+    #get the max and mins to make sure we get all geos
+    min_x, min_y, max_x, max_y = math.floor(bounding_box[0])-1, math.floor(bounding_box[1])-1, math.ceil(bounding_box[2])+1, math.ceil(bounding_box[3])+1
     
     client = pystac_client.Client.open(
             "https://planetarycomputer.microsoft.com/api/stac/v1",
@@ -313,6 +326,7 @@ def extract_terrain_data_threaded(metadata_df, region):
     DEMs = DEMs.set_index(DEMs['tileID'])
     del DEMs['tileID']
     print(f"There are {len(DEMs)} tiles in the region")
+    display(DEMs)
 
     print("Determining Grid Cell Spatial Features")
 
@@ -333,11 +347,12 @@ def extract_terrain_data_threaded(metadata_df, region):
     metadata_df = pd.concat([metadata_df, meta], axis = 1)
 
     #save regional dataframe
-    dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
+    dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
     print(f"Saving {region} dataframe in {dfpath}")
     #metadata_df.to_csv(f"{dfpath}/{region}_metadata.parquet")
     # Save the DataFrame as a parquet file
-    #Convert DataFrame to Apache Arrow Table
+    #Convert DataFrame to Apache Arrow Table, drop the geometry column to play nice with parquet files
+    metadata_df.pop('geometry')
     table = pa.Table.from_pandas(metadata_df)
     # Parquet with Brotli compression
     pq.write_table(table, f"{dfpath}/{region}_metadata.parquet", compression='BROTLI')
@@ -347,7 +362,7 @@ def extract_terrain_data_threaded(metadata_df, region):
 
 def add_geospatial_threaded(region, output_res):
     # Processed ASO observations folder with snotel measurements
-    TrainingDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
+    TrainingDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
     GeoObsdfs = f"{TrainingDFpath}/GeoObsDFs"
 
     #Make directory
