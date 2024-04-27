@@ -145,8 +145,7 @@ class ASODataTool:
 
         with cf.ThreadPoolExecutor(max_workers=5) as executor: #setting max workers to none leads to 503 error, NASA does not like us pinging a lot
             {executor.submit(NSIDC_Data.cmr_download, (self.url_list[i]),credentials, dpath,region, False):i for i in tqdm(range(len(self.url_list)))}
-        #NSIDC_Data.cmr_download(self.url_list, dpath,region, False)
-       
+
         print(f"All NASA ASO data collected for given date range and can be found in {dpath}...")
         print("Files with .xml extension moved to the destination folder.")
 
@@ -201,9 +200,6 @@ class ASODownload(ASODataTool):
                                 'Or_Coast'  ]
 
     def BoundingBox(self, region):
-        #print(f"Getting ASO data for {region}")
-        # for i, regions in enumerate(self.region_list, start=1):
-        #     print(f"{i}. {regions}")
         try:
             self.bounding_box = self.get_bounding_box(region)
             print(f"Bounding Box collected for {region}: {self.bounding_box}")
@@ -270,7 +266,7 @@ class ASODataProcessing:
     #         pq.write_table(table, parquet_filepath, compression='BROTLI')
         
         
-    def processing_tiff(input_file, output_path, output_res, region):
+    def processing_tiff(self, input_file, output_path, output_res, region):
         try:
             date = os.path.splitext(input_file)[0].split("_")[-1]
             
@@ -285,7 +281,7 @@ class ASODataProcessing:
                 return None
             
             # Reproject and resample, the Res # needs to be in degrees 0.00009 is equivalent to ~100 m
-            Res = (1/output_res)*.1
+            Res = output_res/111111
             gdal.Warp(output_file, ds, dstSRS="EPSG:4326", xRes=Res, yRes=-Res, resampleAlg="bilinear")
 
             # Read the processed TIFF file using rasterio
@@ -305,7 +301,7 @@ class ASODataProcessing:
         folder_path, tiff_filename, output_res, region, dir = args
         # Open the TIFF file
         tiff_filepath = os.path.join(folder_path, tiff_filename)
-        df = ASODataProcessing.processing_tiff(tiff_filepath, dir, output_res, region)
+        df = self.processing_tiff(tiff_filepath, dir, output_res, region)
 
         #process file for more efficient saving and fix column headers
         df.rename(columns = {'x': 'cen_lon', 'y':'cen_lat', 'data':'swe_m'}, inplace = True)
@@ -354,7 +350,6 @@ class ASODataProcessing:
             [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, region, dir)) for i in tqdm(range(len(tiff_files)))]
 
         print('Checking to make sure all files successfully converted...')
-        # aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
         parquet_folder = os.path.join(dir, f"{region}/{output_res}M_SWE_parquet")
         for parquet_file in tqdm(os.listdir(parquet_folder)):
             try:
@@ -400,9 +395,7 @@ class ASODataProcessing:
                                 # redo function to convert tiff to parquet
                                 self.process_single_ASO_file(args)
 
-                            
-
-                            
+                           
                 
     def create_polygon(self, row):
         return Polygon([(row['BL_Coord_Long'], row['BL_Coord_Lat']),
@@ -412,97 +405,82 @@ class ASODataProcessing:
     
     #make cell_id
     def make_cell_id(self,region, output_res, cen_lat, cen_lon):
+        #round lat/long to similar sites, may redue file size...
+        cen_lat = round(cen_lat,3) #rounding to 3 past the decimal, 100m =~0.001 degreest
+        cen_lon = round(cen_lon,3)
         cell_id = f"{region}_{output_res}M_{cen_lat}_{cen_lon}"
         return cell_id
 
-    def process_folder(self, input_folder, output_folder, region, output_res):
+    # def process_folder(self, input_folder, output_folder, region, output_res):
 
-        # Import the metadata into a pandas DataFrame
-        input_folder = f"{HOME}/SWEMLv2.0/data/{input_folder}"
-        output_folder = f"{HOME}/SWEMLv2.0/data/{output_folder}"
+    #     # Import the metadata into a pandas DataFrame
+    #     input_folder = f"{HOME}/SWEMLv2.0/data/{input_folder}"
+    #     output_folder = f"{HOME}/SWEMLv2.0/data/{output_folder}"
 
-        if not os.path.exists(input_folder):
-            os.makedirs(input_folder, exist_ok=True)
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder, exist_ok=True)
+    #     if not os.path.exists(input_folder):
+    #         os.makedirs(input_folder, exist_ok=True)
+    #     if not os.path.exists(output_folder):
+    #         os.makedirs(output_folder, exist_ok=True)
 
-        #set up pred_obs_metadata_df to load the one created in convert_tiff_to_parquet_multiprocess
-        # try:
-        #     pred_obs_metadata_df = pd.read_csv(f"{metadata_path}/grid_cells_meta.csv")
-        # except:
-        #     print("metadata not found, retreiving from AWS S3")
-        #     key = "NSMv2.0"+metadata_path.split("SWEMLv2.0",1)[1]
-        #     print(f"{key}/grid_cells_meta.csv")
-        #     if not os.path.exists(metadata_path):
-        #         os.makedirs(metadata_path, exist_ok=True)
-        #     S3.meta.client.download_file(BUCKET_NAME, f"{key}/grid_cells_meta.csv",f"{metadata_path}/grid_cells_meta.csv")
-        #     pred_obs_metadata_df = pd.read_csv(f"{metadata_path}/grid_cells_meta.csv")
+    #     aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
 
-        aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
+    #     metadf = pd.DataFrame()
+    #     print('Loading all Geospatial prediction/observation files and concatenating into one dataframe')
+    #     for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
+    #         try:
+    #             aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file), engine='fastparquet')
+    #             metadf = pd.concat([metadf, aso_file])
+    #         except:
+    #             print(aso_swe_file)
 
-        metadf = pd.DataFrame()
-        print('Loading all Geospatial prediction/observation files and concatenating into one dataframe')
-        for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
-            try:
-                aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file), engine='fastparquet')
-                metadf = pd.concat([metadf, aso_file])
-            except:
-                print(aso_swe_file)
+    #     print('Identifying unique sites to create geophysical information dataframe') 
+    #     cols = ['cen_lat', 'cen_lon']
+    #     metadf = metadf[cols]
+    #     tqdm.pandas()
+    #     metadf['cell_id'] = metadf.progress_apply(lambda row: self.make_cell_id(region, output_res, row['cen_lat'], row['cen_lon']), axis=1)
 
-        print('Identifying unique sites to create geophysical information dataframe') 
-        cols = ['cen_lat', 'cen_lon']
-        metadf = metadf[cols]
-        tqdm.pandas()
-        metadf['cell_id'] = metadf.progress_apply(lambda row: self.make_cell_id(region, output_res, row['cen_lat'], row['cen_lon']), axis=1)
+    #     metadf.drop_duplicates('cell_id').set_index('cell_id', inplace=True)
 
-        metadf.drop_duplicates('cell_id').set_index('cell_id', inplace=True)
-
-        print("Applying polygon geometries, please be patient, this step can take a few minutes...")
-        metadf = metadf.drop(columns=['Unnamed: 0'], axis=1)
-        tqdm.pandas()
-        metadf['geometry'] = metadf.progress_apply(self.create_polygon, axis=1)
+    #     print("Applying polygon geometries, please be patient, this step can take a few minutes...")
+    #     metadf = metadf.drop(columns=['Unnamed: 0'], axis=1)
+    #     tqdm.pandas()
+    #     metadf['geometry'] = metadf.progress_apply(self.create_polygon, axis=1)
     
-        # Convert the DataFrame to a GeoDataFrame
-        print("Converting to GeoDataFrame")
-        metadata = gpd.GeoDataFrame(metadf, geometry='geometry')
+    #     # Convert the DataFrame to a GeoDataFrame
+    #     # print("Converting to GeoDataFrame")
+    #     # metadata = gpd.GeoDataFrame(metadf, geometry='geometry')
     
-        # Drop coordinates columns
-        # metadata_df = metadata.drop(columns=['BL_Coord_Long', 'BL_Coord_Lat', 
-        #                                      'BR_Coord_Long', 'BR_Coord_Lat', 
-        #                                      'UR_Coord_Long', 'UR_Coord_Lat', 
-        #                                      'UL_Coord_Long', 'UL_Coord_Lat'], axis=1)
-    
-        # List all parquet files in the input folder
-        parquet_files = [f for f in os.listdir(input_folder) if f.endswith('.parquet')]
+    #     # List all parquet files in the input folder
+    #     parquet_files = [f for f in os.listdir(input_folder) if f.endswith('.parquet')]
 
-        print(f"Processing {len(parquet_files)} files for dataframe development")
+    #     print(f"Processing {len(parquet_files)} files for dataframe development")
 
-        # Create parquet files from TIFF files
-        with cf.ProcessPoolExecutor(max_workers=None) as executor: 
-        # Start the load operations and mark each future with its process function
-            [executor.submit(self.file_2_geodataframe_single, (input_folder, output_folder, parquet_files[i], metadata_df )) for i in tqdm(range(len(parquet_files)))]
+    #     # Create parquet files from TIFF files
+    #     with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+    #     # Start the load operations and mark each future with its process function
+    #         [executor.submit(self.file_2_geodataframe_single, (input_folder, output_folder, parquet_files[i], metadata_df )) for i in tqdm(range(len(parquet_files)))]
              
-    def file_2_geodataframe_single(self, args):
-        input_folder, output_folder, parquet_file, metadata_df = args
+    # def file_2_geodataframe_single(self, args):
+    #     input_folder, output_folder, parquet_file, metadata_df = args
         
-        input_aso_path = os.path.join(input_folder, parquet_file)
-        output_aso_path = os.path.join(output_folder, parquet_file)
+    #     input_aso_path = os.path.join(input_folder, parquet_file)
+    #     output_aso_path = os.path.join(output_folder, parquet_file)
 
-        # Process each parquet file
-        aso_swe_df = pd.read_parquet(input_aso_path, engine='fastparquet')
+    #     # Process each parquet file
+    #     aso_swe_df = pd.read_parquet(input_aso_path, engine='fastparquet')
 
-        # Convert the "aso_swe_df" into a GeoDataFrame with point geometries
-        geometry = [Point(xy) for xy in zip(aso_swe_df['cen_lon'], aso_swe_df['cen_lat'])]
-        aso_swe_geo = gpd.GeoDataFrame(aso_swe_df, geometry=geometry)
+    #     # Convert the "aso_swe_df" into a GeoDataFrame with point geometries
+    #     geometry = [Point(xy) for xy in zip(aso_swe_df['cen_lon'], aso_swe_df['cen_lat'])]
+    #     aso_swe_geo = gpd.GeoDataFrame(aso_swe_df, geometry=geometry)
 
-        result = gpd.sjoin(aso_swe_geo, metadata_df, how='left', predicate='within', op = 'intersects')
+    #     result = gpd.sjoin(aso_swe_geo, metadata_df, how='left', predicate='within', op = 'intersects')
 
-        # Select specific columns for the final DataFrame
-        Final_df = result[['cen_lat', 'cen_lon', 'swe_m', 'cell_id']]
+    #     # Select specific columns for the final DataFrame
+    #     Final_df = result[['cen_lat', 'cen_lon', 'swe_m', 'cell_id']]
 
-        #Convert DataFrame to Apache Arrow Table and save as parquet file with Brotli compression
-        table = pa.Table.from_pandas(Final_df)
-        pq.write_table(table, output_aso_path, compression='BROTLI')
+    #     #Convert DataFrame to Apache Arrow Table and save as parquet file with Brotli compression
+    #     table = pa.Table.from_pandas(Final_df)
+    #     pq.write_table(table, output_aso_path, compression='BROTLI')
         
             
     # def converting_ASO_to_standardized_format(self, input_folder, output_csv):
