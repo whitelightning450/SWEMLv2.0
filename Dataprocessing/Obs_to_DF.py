@@ -3,6 +3,8 @@
 import numpy as np
 import xarray as xr
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # Vector Packages
 import geopandas as gpd
@@ -54,10 +56,8 @@ BUCKET = S3.Bucket(BUCKET_NAME)
 #function for processing a single timestamp
 def process_single_timestamp(args):
     #get key variable from args
-    aso_swe_file, new_column_names, snotel_data_f, region, nearest_snotel , Obsdf = args
-    #ASO observations
-    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/Processed_SWE/{region}"
-        
+    aso_swe_files_folder_path, aso_swe_file,output_res, new_column_names, snotel_data_f, region, nearest_snotel , Obsdf = args
+       
     timestamp = aso_swe_file.split('_')[-1].split('.')[0]
 
     #load in SWE data from ASO
@@ -103,7 +103,7 @@ def process_single_timestamp(args):
         Obsdf = pd.concat([Obsdf, aso_swe_data], ignore_index=True)
 
     #save each timesteps df in case of error in data size for all...
-    obsdf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/Obsdf"
+    obsdf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Obsdf"
     if not os.path.exists(obsdf_path):
         os.makedirs(obsdf_path, exist_ok=True)
 
@@ -114,7 +114,10 @@ def process_single_timestamp(args):
 
     Obsdf = Obsdf[cols]
 
-    Obsdf.to_csv(f"{obsdf_path}/{timestamp}_ObsDF.parquet")
+    #Obsdf.to_csv(f"{obsdf_path}/{timestamp}_ObsDF.parquet")
+    table = pa.Table.from_pandas(Obsdf)
+    # Parquet with Brotli compression
+    pq.write_table(table,f"{obsdf_path}/{timestamp}_ObsDF.parquet", compression='BROTLI')
   
 
 def Nearest_Snotel_2_obs_MultiProcess(region, output_res):    
@@ -124,9 +127,9 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res):
     snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
     Snotelobs_path = f"{snotel_path}ground_measures_train_featuresALLDATES.parquet"
     #nearest snotel path
-    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
+    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
     #ASO observations
-    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/Processed_SWE/{region}"
+    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
 
     #Get sites/snotel observations from 2013-2019
     print('Loading observations from 2013-2019')
@@ -162,13 +165,9 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res):
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
     with cf.ProcessPoolExecutor(max_workers=None) as executor: 
         # Start the load operations and mark each future with its process function
-        [executor.submit(process_single_timestamp, (aso_swe_files[i],new_column_names, snotel_data_f, region, nearest_snotel, Obsdf)) for i in tqdm(range(len(aso_swe_files)))]
+        [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i],output_res, new_column_names, snotel_data_f, region, nearest_snotel, Obsdf)) for i in tqdm(range(len(aso_swe_files)))]
         
         print(f"Job complete for connecting SNOTEL obs to sites/dates")
-    #     for job in tqdm(cf.as_completed(jobs)):
-    #         Obsdf = pd.concat([Obsdf,job.result()])
-
-
 
 
 
@@ -182,7 +181,7 @@ def Nearest_Snotel_2_obs(region, output_res):
     #ASO observations
     aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/Processed_SWE/{region}"
     #nearest snotel path
-    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
+    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
 
     #Get sites/snotel observations from 2013-2019
     print('Loading observations from 2013-2019')
@@ -198,7 +197,7 @@ def Nearest_Snotel_2_obs(region, output_res):
 
     #Get Geospatial meta data
     print(f"Loading goeospatial meta data for grids in {region}")
-    geodf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}"
+    geodf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
     try:
         aso_gdf = pd.read_csv(f"{geodf_path}/{region}_metadata.parquet")
     except:
