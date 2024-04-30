@@ -168,16 +168,13 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     ASO_meta_loc_DF = pd.DataFrame()
 
     #add new prediction location here at this step - 
-    #will need to make 100m grid for RegionVal.pkl. currenlty 1.8 million sites with just ASO
+    #will need to make grid for RegionVal.pkl. 
     #build in method for adding to existing dictionary rather than rerunning for entire region...
     print('Loading all Geospatial prediction/observation files and concatenating into one dataframe')
     for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
         aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file), engine='fastparquet')
         ASO_meta_loc_DF = pd.concat([ASO_meta_loc_DF, aso_file])
-    
-    #removing bad ASO sites
-    # print(f"Removing nan ASO sites and saving geodataframe to TrainingDFs {region} folder.")
-    # ASO_meta_loc_DF = ASO_meta_loc_DF[ASO_meta_loc_DF['swe']>=0]
+
     
     print('Identifying unique sites to create geophysical information dataframe') 
     ASO_meta_loc_DF.drop_duplicates(subset=['cell_id'], inplace=True)
@@ -393,19 +390,15 @@ def add_geospatial_single(args):
 
     ObsDF = pd.read_parquet(f"{aso_swe_path}/{aso_swe_file}", engine='fastparquet')
 
- 
     #combine df with geospatial meta data
     final_df = pd.merge(ObsDF, aso_gdf, on = 'cell_id', how = 'left')
     cols = [
-        'cell_id', 'Date',  'cen_lat', 'cen_lon', 'geometry', 'Elevation_m', 'Slope_Deg',
-        'Aspect_Deg', 'swe', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
+        'cell_id', 'Date',  'cen_lat', 'cen_lon', 'Elevation_m', 'Slope_Deg',
+        'Aspect_Deg', 'swe_m', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
         'nearest_site_5', 'nearest_site_6'
         ]
     final_df = final_df[cols]
 
-    #display(final_df)
-
-    #final_df.to_csv(f"{GeoObsdfs}/GeoObsdfs_{aso_swe_file[:8]}.parquet")
     #Convert DataFrame to Apache Arrow Table
     table = pa.Table.from_pandas(final_df)
     # Parquet with Brotli compression
