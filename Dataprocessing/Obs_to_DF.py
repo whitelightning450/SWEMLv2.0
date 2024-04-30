@@ -19,6 +19,7 @@ from datetime import datetime
 import glob
 from pathlib import Path
 from tqdm import tqdm
+from tqdm._tqdm_notebook import tqdm_notebook
 import time
 import requests
 import concurrent.futures as cf
@@ -53,33 +54,38 @@ BUCKET_NAME = 'national-snow-model'
 BUCKET = S3.Bucket(BUCKET_NAME)
 
 
+
+#function for processing a single row
+def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data_f):
+        cell_id = row['cell_id']
+        station_ids = nearest_snotel[cell_id]
+        selected_snotel_data = snotel_data_f[['station_id', timestamp]].loc[snotel_data_f['station_id'].isin(station_ids)]
+        station_mapping = {old_id: f"nearest_site_{i+1}" for i, old_id in enumerate(station_ids)}
+        
+        # Rename the station IDs in the selected SNOTEL data
+        selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
+
+        # Transpose and set the index correctly
+        transposed_data[cell_id] = selected_snotel_data.set_index('station_id').T
+
+
 #function for processing a single timestamp
 def process_single_timestamp(args):
     #get key variable from args
-    aso_swe_files_folder_path, aso_swe_file,output_res, new_column_names, snotel_data_f, region, nearest_snotel , Obsdf = args
-       
+    aso_swe_files_folder_path, aso_swe_file, new_column_names, snotel_data_f, nearest_snotel , Obsdf, obsdf_path = args
+        
     timestamp = aso_swe_file.split('_')[-1].split('.')[0]
 
     #load in SWE data from ASO
-    aso_swe_data = pd.read_csv(os.path.join(aso_swe_files_folder_path, aso_swe_file))
-    aso_swe_data.dropna(inplace=True)
-    aso_swe_data = aso_swe_data[aso_swe_data['swe'] >= 0]
+    aso_swe_data = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file), engine='fastparquet')
+
     aso_swe_data.reset_index(inplace=True)
     transposed_data = {}
 
     if timestamp in new_column_names.values():
-        #print(f"Connecting ASO observations and Snotel observations for {timestamp}")
-        for row in tqdm(np.arange(0, len(aso_swe_data),1)):
-            cell_id = aso_swe_data.loc[row]['cell_id']
-            station_ids = nearest_snotel[cell_id]
-            selected_snotel_data = snotel_data_f[['station_id', timestamp]].loc[snotel_data_f['station_id'].isin(station_ids)]
-            station_mapping = {old_id: f"nearest_site_{i+1}" for i, old_id in enumerate(station_ids)}
-            
-            # Rename the station IDs in the selected SNOTEL data
-            selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
-
-            # Transpose and set the index correctly
-            transposed_data[cell_id] = selected_snotel_data.set_index('station_id').T
+        print(f"Adding geospatial data to {timestamp} observations...")
+        tqdm_notebook.pandas()
+        aso_swe_data.progress_apply(lambda row: cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data_f), axis =1)
         
         #Convert dictionary of sites to dataframe
         transposed_df = pd.concat(transposed_data, axis=0)
@@ -90,25 +96,20 @@ def process_single_timestamp(args):
         transposed_df['Date'] = pd.to_datetime(transposed_df['Date'])
 
         aso_swe_data['Date'] = pd.to_datetime(timestamp)
-        aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
+        aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe_m']]
         merged_df = pd.merge(aso_swe_data, transposed_df, how='left', on=['cell_id', 'Date'])
 
         Obsdf = pd.concat([Obsdf, merged_df], ignore_index=True)
 
     else:
         aso_swe_data['Date'] = pd.to_datetime(timestamp)
-        aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
+        aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe_m']]
 
         # No need to merge in this case, directly concatenate
         Obsdf = pd.concat([Obsdf, aso_swe_data], ignore_index=True)
 
-    #save each timesteps df in case of error in data size for all...
-    obsdf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Obsdf"
-    if not os.path.exists(obsdf_path):
-        os.makedirs(obsdf_path, exist_ok=True)
-
     cols = [
-    'cell_id', 'Date', 'swe', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
+    'cell_id', 'Date', 'swe_m', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
     'nearest_site_5', 'nearest_site_6'
     ]
 
@@ -130,6 +131,11 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res):
     nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
     #ASO observations
     aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
+
+     #Make folder for predictions
+    obsdf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Obsdf"
+    if not os.path.exists(obsdf_path):
+        os.makedirs(obsdf_path, exist_ok=True)
 
     #Get sites/snotel observations from 2013-2019
     print('Loading observations from 2013-2019')
@@ -165,7 +171,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res):
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
     with cf.ProcessPoolExecutor(max_workers=None) as executor: 
         # Start the load operations and mark each future with its process function
-        [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i],output_res, new_column_names, snotel_data_f, region, nearest_snotel, Obsdf)) for i in tqdm(range(len(aso_swe_files)))]
+        [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data_f, nearest_snotel, Obsdf, obsdf_path)) for i in tqdm(range(len(aso_swe_files)))]
         
         print(f"Job complete for connecting SNOTEL obs to sites/dates")
 
@@ -229,8 +235,6 @@ def Nearest_Snotel_2_obs(region, output_res):
 
         #load in SWE data from ASO
         aso_swe_data = pd.read_csv(os.path.join(aso_swe_files_folder_path, aso_swe_file))
-        aso_swe_data.dropna(inplace=True)
-        aso_swe_data = aso_swe_data[aso_swe_data['swe'] >= 0]
         aso_swe_data.reset_index(inplace=True)
         transposed_data = {}
 
@@ -257,14 +261,14 @@ def Nearest_Snotel_2_obs(region, output_res):
             transposed_df['Date'] = pd.to_datetime(transposed_df['Date'])
 
             aso_swe_data['Date'] = pd.to_datetime(timestamp)
-            aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
+            aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe_m']]
             merged_df = pd.merge(aso_swe_data, transposed_df, how='left', on=['cell_id', 'Date'])
 
             Obsdf = pd.concat([Obsdf, merged_df], ignore_index=True)
 
         else:
             aso_swe_data['Date'] = pd.to_datetime(timestamp)
-            aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe']]
+            aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe_m']]
 
             # No need to merge in this case, directly concatenate
             Obsdf = pd.concat([Obsdf, aso_swe_data], ignore_index=True)
@@ -274,7 +278,7 @@ def Nearest_Snotel_2_obs(region, output_res):
     final_df = pd.merge(Obsdf, aso_gdf, on = 'cell_id', how = 'left')
     cols = [
         'cell_id', 'Date',  'cen_lat', 'cen_lon', 'geometry', 'Elevation_m', 'Slope_Deg',
-       'Aspect_Deg', 'swe', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
+       'Aspect_Deg', 'swe_m', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
        'nearest_site_5', 'nearest_site_6'
       ]
     final_df = final_df[cols]
