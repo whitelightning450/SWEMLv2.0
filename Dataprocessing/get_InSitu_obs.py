@@ -77,6 +77,7 @@ def get_SNOTEL_Threaded(args):
 def get_CDEC_Threaded(args): #https://ulmo.readthedocs.io/en/latest/api.html ulmo now has CDEC sites
 
     SWE_df, station_id, sensor_id, resolution, start_date, end_date = args
+    #print(f"Station id: {station_id}, sensor id: {sensor_id}, resolution: {resolution}, start date: {start_date}, end date: {end_date}")
     url = 'https://cdec.water.ca.gov/dynamicapp/selectQuery?Stations=%s' % (station_id) + '&SensorNums=%s' % (
                 sensor_id) + '&dur_code=%s' % (resolution) + '&Start=%s' % (start_date) + '&End=%s' % (end_date)
     # allows up to 3 attempts for getting site info, sometimes takes a few
@@ -152,18 +153,18 @@ def Get_Monitoring_Data_Threaded(dates):
         print(f"Getting California Data Exchange Center SWE data from {len(CDECsites)} sites...") 
         with cf.ThreadPoolExecutor(max_workers=None) as executor:
             {executor.submit(get_CDEC_Threaded, (SWE_df, site, sensor_id, resolution, start_date, date)): site for site in tqdm(CDECsites)}
+            
 
         print(f"Getting NRCS SNOTEL SWE data from {len(Snotelsites)} sites...") 
         with cf.ThreadPoolExecutor(max_workers=6) as executor:
-            {executor.submit(get_SNOTEL_Threaded, (SWE_df, site, start_date, date)):
-                site for site in tqdm(Snotelsites)}
+            {executor.submit(get_SNOTEL_Threaded, (SWE_df, site, start_date, date)): site for site in tqdm(Snotelsites)}
 
         SWE_df = SWE_df[~SWE_df.index.duplicated(keep='first')]
         SWE_df[date] = SWE_df[date].astype('float', errors='ignore')
         
         #fix na sites with regional average
-        CDECsites = SWE_df.loc['CDEC:ADM':'CDEC:WWC']
-        meanSWE = CDECsites[CDECsites[date]>=0].mean().values[0]
+        CDEC = SWE_df.loc['CDEC:ADM':'CDEC:WWC']
+        meanSWE = CDEC[CDEC[date]>=0].mean().values[0]
         SWE_df[SWE_df[date]<-10]=meanSWE
 
         # remove -- from CDEC predictions and make df a float
