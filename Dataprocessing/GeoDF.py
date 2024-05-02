@@ -43,6 +43,7 @@ from pprint import pprint
 from typing import Union
 from pathlib import Path
 from tqdm import tqdm
+from tqdm._tqdm_notebook import tqdm_notebook
 import time
 import requests
 import concurrent.futures as cf
@@ -84,6 +85,22 @@ S3 = SESSION.resource('s3')
 BUCKET_NAME = 'national-snow-model'
 BUCKET = S3.Bucket(BUCKET_NAME)
 
+def row_snotel(row, distance_cache, nearest_snotel, snotel_gdf, n):
+    cell_id = row.name
+        # Check if distances for this cell_id are already calculated and cached
+    if cell_id in distance_cache:
+        nearest_snotel[cell_id] = distance_cache[cell_id]
+    else:
+        # Calculate Haversine distances between the grid cell and all SNOTEL locations
+        distances = haversine_vectorized(
+            row.geometry.y, row.geometry.x,
+            snotel_gdf.geometry.y.values, snotel_gdf.geometry.x.values)
+
+        # Store the nearest stations in the cache
+        nearest_snotel[cell_id] = list(snotel_gdf['station_id'].iloc[distances.argsort()[:n]])
+        distance_cache[cell_id] = nearest_snotel[cell_id]
+
+
 
 # Calculating nearest SNOTEL sites, n = the number of snotel sites
 def calculate_nearest_snotel(region, aso_gdf, snotel_gdf,output_res, n=6, distance_cache=None):
@@ -94,20 +111,9 @@ def calculate_nearest_snotel(region, aso_gdf, snotel_gdf,output_res, n=6, distan
 
     nearest_snotel = {}
     print(f"Calculating haversine distance for {len(aso_gdf)} locations to in situ OBS, and saving cell-obs relationships in dictionary")
-    for idx, aso_row in tqdm(aso_gdf.iterrows()):
-        cell_id = idx
-        # Check if distances for this cell_id are already calculated and cached
-        if cell_id in distance_cache:
-            nearest_snotel[idx] = distance_cache[cell_id]
-        else:
-            # Calculate Haversine distances between the grid cell and all SNOTEL locations
-            distances = haversine_vectorized(
-                aso_row.geometry.y, aso_row.geometry.x,
-                snotel_gdf.geometry.y.values, snotel_gdf.geometry.x.values)
+    tqdm_notebook.pandas()
+    aso_gdf.progress_apply(lambda row: row_snotel(row, distance_cache, nearest_snotel, snotel_gdf,n), axis = 1) #try function to see if its working
 
-            # Store the nearest stations in the cache
-            nearest_snotel[idx] = list(snotel_gdf['station_id'].iloc[distances.argsort()[:n]])
-            distance_cache[cell_id] = nearest_snotel[idx]
     #saving nearest snotel file
     print(f"Saving nearest SNOTEL in {region} for each cell id in a pkl file")        
     with open(f"{nearest_snotel_dict_path}/nearest_SNOTEL.pkl", 'wb') as handle:
@@ -153,17 +159,17 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     #relative file paths
     aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
     snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
-    Snotelmeta_path = f"{snotel_path}ground_measures_metadata.csv"
+    Snotelmeta_path = f"{snotel_path}ground_measures_metadata.parquet"
     
     try:
-        snotel_file = pd.read_csv(Snotelmeta_path)
+        snotel_file = pd.read_parquet(Snotelmeta_path)
     except:
         print("Snotel meta not found, retreiving from AWS S3")
         if not os.path.exists(snotel_path):
             os.makedirs(snotel_path, exist_ok=True)
         key = "NSMv2.0"+Snotelmeta_path.split("SWEMLv2.0",1)[1]       
         S3.meta.client.download_file(BUCKET_NAME, key,Snotelmeta_path)
-        snotel_file = pd.read_csv(Snotelmeta_path)
+        snotel_file = pd.read_parquet(Snotelmeta_path)
 
     ASO_meta_loc_DF = pd.DataFrame()
 
@@ -193,11 +199,6 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['cen_lon'], ASO_meta_loc_DF['cen_lat'])]
     aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry)
 
-    print('Loading SNOTEL metadata and processing snotel geometry')
-    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
-    Snotelmeta_path = f"{snotel_path}ground_measures_metadata.csv"
-    snotel_file = pd.read_csv(Snotelmeta_path)
-
     snotel_geometry = [Point(xy) for xy in zip(snotel_file['longitude'], snotel_file['latitude'])]
     snotel_gdf = gpd.GeoDataFrame(snotel_file, geometry=snotel_geometry)
 
@@ -219,9 +220,6 @@ def GeoSpatial(region, output_res):
     print(f"Converting to geodataframe")
     aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['cen_lon'], ASO_meta_loc_DF['cen_lat'])]
     aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry)
-    
-    #renaming columns x/y to lat/long
-    #aso_gdf.rename(columns = {'y':'cen_lat', 'x':'cen_lon'}, inplace = True)
 
     return aso_gdf
 
@@ -323,7 +321,6 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
     DEMs = DEMs.set_index(DEMs['tileID'])
     del DEMs['tileID']
     print(f"There are {len(DEMs)} tiles in the region")
-    display(DEMs)
 
     print("Determining Grid Cell Spatial Features")
 
@@ -331,7 +328,6 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
     results = []
     with cf.ThreadPoolExecutor(max_workers=None) as executor:
         jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles)): 
-
                 i for i in tqdm(range(len(metadata_df)))}
         
         print(f"Job complete for getting geospatial metadata, processing dataframe")
@@ -372,9 +368,11 @@ def add_geospatial_threaded(region, output_res):
 
     #create dataframe
     print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
-    aso_swe_files = []
-    for aso_swe_file in tqdm(os.listdir(f"{TrainingDFpath}/Obsdf")):  #add file names to aso_swe_files
-        aso_swe_files.append(aso_swe_file)
+    # aso_swe_files = []
+    # for aso_swe_file in tqdm(os.listdir(f"{TrainingDFpath}/Obsdf")):  #add file names to aso_swe_files
+    #     aso_swe_files.append(aso_swe_file)
+    aso_swe_files = [filename for filename in os.listdir(f"{TrainingDFpath}/Obsdf")]
+    
     print(f"Concatenating {len(aso_swe_files)} with geospatial data...")
     with cf.ProcessPoolExecutor(max_workers=None) as executor: 
         # Start the load operations and mark each future with its process function
