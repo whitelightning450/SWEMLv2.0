@@ -58,39 +58,62 @@ BUCKET = S3.Bucket(BUCKET_NAME)
 
 #function for processing a single row -  test to see if this works
 def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data_f):
-        cell_id = row['cell_id']
-        station_ids = nearest_snotel[cell_id]
-        selected_snotel_data = snotel_data_f[['station_id', timestamp]].loc[snotel_data_f['station_id'].isin(station_ids)]
-        station_mapping = {old_id: f"nearest_site_{i+1}" for i, old_id in enumerate(station_ids)}
-        
-        # Rename the station IDs in the selected SNOTEL data
-        selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
+    cell_id = row['cell_id']
+    station_ids = nearest_snotel[cell_id]
+    station_mapping = {old_id: f"nearest_site_{i+1}" for i, old_id in enumerate(station_ids)}
+    cols = ['station_id', timestamp]
+    selected_snotel_data = snotel_data_f[cols]
+    # # Rename the station IDs in the selected SNOTEL data
+    selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
+    selected_snotel_data.dropna(subset =['station_id'], inplace = True)
+    # # Transpose and set the index correctly
+    transposed_data[cell_id] = selected_snotel_data.set_index('station_id').T
 
-        # Transpose and set the index correctly
-        transposed_data[cell_id] = selected_snotel_data.set_index('station_id').T
+def average_duplicates(cell_id, aso_file, siteave_dic):
+    sitex = aso_file[aso_file['cell_id'] == cell_id]
+    mean_lat = np.round(np.mean(sitex['cen_lat']),3)
+    mean_lon = np.round(np.mean(sitex['cen_lon']),3)
+    mean_swe = np.round(np.mean(sitex['swe_m']),2)
 
-        #Convert dictionary of sites to dataframe
-        transposed_df = pd.concat(transposed_data, axis=0)
+    tempdic = {'cell_id': cell_id,
+            'cen_lat': mean_lat,
+            'cen_lon': mean_lon,
+            'swe_m': mean_swe
+    }
+
+    sitedf = pd.DataFrame(tempdic, index = [cell_id])
+    siteave_dic[cell_id] = sitedf
 
 
 #function for processing a single timestamp
 def process_single_timestamp(args):
     #get key variable from args
-    aso_swe_files_folder_path, aso_swe_file, new_column_names, snotel_data_f, nearest_snotel , Obsdf, obsdf_path = args
+    aso_swe_files_folder_path, aso_swe_file, new_column_names, snotel_data_f, nearest_snotel , Obsdf, obsdf_path, output_res = args
         
     timestamp = aso_swe_file.split('_')[-1].split('.')[0]
 
     #load in SWE data from ASO
     aso_swe_data = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file), engine='fastparquet')
 
+    #drop duplicate sites/spatial area, average the spatial area per cell_id
     aso_swe_data.reset_index(inplace=True)
+    #get unique sites
+    cell_ids = aso_swe_data.cell_id.unique()
+    siteave_dic = {}
+    print(f"Getting unique cell ids and taking the spatial average to get {output_res} m resolution for timestep {timestamp}")
+    [average_duplicates(cell_id, aso_swe_data, siteave_dic) for cell_id in cell_ids]
+    aso_swe_data = pd.concat(siteave_dic)
+
     transposed_data = {}
-    ts = []
 
     if timestamp in new_column_names.values():
-        print(f"Adding geospatial data to {timestamp} observations...")
+        print(f"Site processing complete, adding observtional data to {timestamp} df...")
         tqdm_notebook.pandas()
         aso_swe_data.progress_apply(lambda row: cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data_f), axis =1)
+
+        #Convert dictionary of sites to dataframe
+        transposed_df = pd.concat(transposed_data, axis=0) 
+     
 
         # Reset index and rename columns
         transposed_df.reset_index(inplace = True)
@@ -162,7 +185,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res):
     
     #create dataframe
     aso_swe_files = [filename for filename in os.listdir(aso_swe_files_folder_path)]
-    print(f"Loading {len(aso_swe_files_folder_path)} processed ASO observations for the {region} at {output_res}M resolution")
+    print(f"Loading {len(aso_swe_files)} processed ASO observations for the {region} at {output_res}M resolution")
 
     #Find out if we need to get more snotel obs...
     ts = []
@@ -177,8 +200,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res):
     nots = np.sort(nots)
     print(f"There are {len(ts)} aso dates in snotel obs")
     print(f"There are {len(nots)} missing snotel obs")
-    print(f"Getting CDEC and SNOTEL observations for the following dates: {nots}")
-
+    
     #get missing snotel observations
     #create list of dates
     dates = []
@@ -188,22 +210,23 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res):
         d= date[6:]
         dates.append(f"{Y}-{m}-{d}")
 
+    print(f"Getting CDEC and SNOTEL observations for the following dates: {dates}")
     #Getdata for missing dates
     snotel_data = get_InSitu_obs.Get_Monitoring_Data_Threaded(dates)
 
     date_columns = snotel_data.columns[1:]
     new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
     snotel_data_f = snotel_data.rename(columns=new_column_names)
+    snotel_data_f.reset_index(inplace=True)
 
-            
     print(f"Connecting {len(aso_swe_files)} timesteps of observations for {region}")
+    aso_swe_files.sort()
     Obsdf = pd.DataFrame()
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
     with cf.ProcessPoolExecutor(max_workers=None) as executor: 
         # Start the load operations and mark each future with its process function
-        [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data_f, nearest_snotel, Obsdf, obsdf_path)) for i in tqdm(range(len(aso_swe_files)))]
+        [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data_f, nearest_snotel, Obsdf, obsdf_path,output_res)) for i in tqdm(range(len(aso_swe_files)))]
         
     print(f"Job complete for connecting SNOTEL obs to sites/dates")
 
-    #return aso_swe_files, aso_swe_files_folder_path, new_column_names, snotel_data
 
