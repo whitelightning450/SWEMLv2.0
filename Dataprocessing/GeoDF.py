@@ -368,9 +368,6 @@ def add_geospatial_threaded(region, output_res):
 
     #create dataframe
     print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
-    # aso_swe_files = []
-    # for aso_swe_file in tqdm(os.listdir(f"{TrainingDFpath}/Obsdf")):  #add file names to aso_swe_files
-    #     aso_swe_files.append(aso_swe_file)
     aso_swe_files = [filename for filename in os.listdir(f"{TrainingDFpath}/Obsdf")]
     
     print(f"Concatenating {len(aso_swe_files)} with geospatial data...")
