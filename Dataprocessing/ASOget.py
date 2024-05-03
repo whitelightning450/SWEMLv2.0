@@ -294,6 +294,21 @@ class ASODataProcessing:
         except Exception as e:
             print(f"An error occurred: {str(e)}")
             return None
+    
+    def average_duplicates(self, cell_id, aso_file, siteave_dic):
+        sitex = aso_file[aso_file['cell_id'] == cell_id]
+        mean_lat = np.round(np.mean(sitex['cen_lat']),3)
+        mean_lon = np.round(np.mean(sitex['cen_lon']),3)
+        mean_swe = np.round(np.mean(sitex['swe_m']),2)
+
+        tempdic = {'cell_id': cell_id,
+                'cen_lat': mean_lat,
+                'cen_lon': mean_lon,
+                'swe_m': mean_swe
+        }
+
+        sitedf = pd.DataFrame(tempdic, index = [cell_id])
+        siteave_dic[cell_id] = sitedf
             
 
     def process_single_ASO_file(self, args):
@@ -303,16 +318,24 @@ class ASODataProcessing:
         tiff_filepath = os.path.join(folder_path, tiff_filename)
         df = self.processing_tiff(tiff_filepath, dir, output_res, region)
 
+        date = os.path.splitext(tiff_filename)[0].split("_")[-1]
+
         #process file for more efficient saving and fix column headers
         df.rename(columns = {'x': 'cen_lon', 'y':'cen_lat', 'data':'swe_m'}, inplace = True)
         df = df[df['swe_m'] >=0]
         #make cell_id for each site
         df['cell_id'] = df.apply(lambda row: self.make_cell_id(region, output_res, row['cen_lat'], row['cen_lon']), axis=1)
 
-        if df is not None:
-            # Get the date from the TIFF filename
-            date = os.path.splitext(tiff_filename)[0].split("_")[-1]
+        #get unique cell ids
+        cell_ids = df.cell_id.unique()
 
+        if len(df) > len(cell_ids):
+            siteave_dic = {}
+            print(f"Taking {len(df)} observations down to {len(cell_ids)} unique cell ids and taking the spatial average to get {output_res} m resolution for timestep {date}")
+            [self.average_duplicates(cell_id, df, siteave_dic) for cell_id in cell_ids]
+            df = pd.concat(siteave_dic)
+
+        if df is not None:
             # Define the parquet filename and folder
             parquet_filename = f"ASO_{output_res}M_SWE_{date}.parquet"
             parquet_folder = os.path.join(dir, f"{region}/{output_res}M_SWE_parquet")
