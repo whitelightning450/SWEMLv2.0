@@ -58,32 +58,20 @@ BUCKET = S3.Bucket(BUCKET_NAME)
 
 #function for processing a single row -  test to see if this works
 def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data_f):
-    cell_id = row['cell_id']
-    station_ids = nearest_snotel[cell_id]
-    station_mapping = {old_id: f"nearest_site_{i+1}" for i, old_id in enumerate(station_ids)}
-    cols = ['station_id', timestamp]
-    selected_snotel_data = snotel_data_f[cols]
-    # # Rename the station IDs in the selected SNOTEL data
-    selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
-    selected_snotel_data.dropna(subset =['station_id'], inplace = True)
-    # # Transpose and set the index correctly
-    transposed_data[cell_id] = selected_snotel_data.set_index('station_id').T
-
-def average_duplicates(cell_id, aso_file, siteave_dic):
-    sitex = aso_file[aso_file['cell_id'] == cell_id]
-    mean_lat = np.round(np.mean(sitex['cen_lat']),3)
-    mean_lon = np.round(np.mean(sitex['cen_lon']),3)
-    mean_swe = np.round(np.mean(sitex['swe_m']),2)
-
-    tempdic = {'cell_id': cell_id,
-            'cen_lat': mean_lat,
-            'cen_lon': mean_lon,
-            'swe_m': mean_swe
-    }
-
-    sitedf = pd.DataFrame(tempdic, index = [cell_id])
-    siteave_dic[cell_id] = sitedf
-
+    try:
+        cell_id = row['cell_id']
+        station_ids = nearest_snotel[cell_id]
+        station_mapping = {old_id: f"nearest_site_{i+1}" for i, old_id in enumerate(station_ids)}
+        cols = ['station_id', timestamp]
+        selected_snotel_data = snotel_data_f[cols]
+        # # Rename the station IDs in the selected SNOTEL data
+        selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
+        selected_snotel_data.dropna(subset =['station_id'], inplace = True)
+        # # Transpose and set the index correctly
+        transposed_data[cell_id] = selected_snotel_data.set_index('station_id').T
+    except:
+        print(f"{cell_id} throwing error, moving on...")
+        
 
 #function for processing a single timestamp
 def process_single_timestamp(args):
@@ -97,12 +85,6 @@ def process_single_timestamp(args):
 
     #drop duplicate sites/spatial area, average the spatial area per cell_id
     aso_swe_data.reset_index(inplace=True)
-    #get unique sites
-    cell_ids = aso_swe_data.cell_id.unique()
-    siteave_dic = {}
-    print(f"Getting unique cell ids and taking the spatial average to get {output_res} m resolution for timestep {timestamp}")
-    [average_duplicates(cell_id, aso_swe_data, siteave_dic) for cell_id in cell_ids]
-    aso_swe_data = pd.concat(siteave_dic)
 
     transposed_data = {}
 
@@ -144,7 +126,7 @@ def process_single_timestamp(args):
     pq.write_table(table,f"{obsdf_path}/{timestamp}_ObsDF.parquet", compression='BROTLI')
   
 
-def Nearest_Snotel_2_obs_MultiProcess(region, output_res):    
+def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):    
 
     print('Connecting site observations with nearest monitoring network obs')
     #get Snotel observations
@@ -184,7 +166,12 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res):
     #snotel_data_f = snotel_data.rename(columns=new_column_names)
     
     #create dataframe
-    aso_swe_files = [filename for filename in os.listdir(aso_swe_files_folder_path)]
+    if manual == False:
+        aso_swe_files = [filename for filename in os.listdir(aso_swe_files_folder_path)]
+
+    if manual == True:
+        aso_swe_files = [f"ASO_{output_res}M_SWE_{date}.parquet" for date in dates]
+
     print(f"Loading {len(aso_swe_files)} processed ASO observations for the {region} at {output_res}M resolution")
 
     #Find out if we need to get more snotel obs...
