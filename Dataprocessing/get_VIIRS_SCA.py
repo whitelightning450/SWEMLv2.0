@@ -96,19 +96,19 @@ def augment_SCA_mutliprocessing(region, output_res, threshold):
     GeoObsDF_files = [filename for filename in os.listdir(GeoObsDF_path) if filename.endswith(".parquet")]
     GeoObsDF_files.sort()
 
-    #GeoObsDF_files = GeoObsDF_files[9:10] #This is to develop code...
+    #GeoObsDF_files = GeoObsDF_files[0:1] #This is to develop code...
 
     #This will get multiprocessed
     print(f"Getting VIIRS fsca values for {len(GeoObsDF_files)} timesteps of observations for {region}")
 
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
-    # with cf.ProcessPoolExecutor(max_workers=None) as executor: 
-    #     # Start the load operations and mark each future with its process function
-    #     [executor.submit(single_df_VIIRS, (GeoObsDF_files[i],GeoObsDF_path, VIIRSdata_path, ViirsGeoObsDF_path, threshold, output_res)) for i in range(len(GeoObsDF_files))]
+    with cf.ProcessPoolExecutor(max_workers=6) as executor:  #settting max works to 6 to not make NASA mad...
+        # Start the load operations and mark each future with its process function
+        [executor.submit(single_df_VIIRS, (GeoObsDF_files[i],GeoObsDF_path, VIIRSdata_path, ViirsGeoObsDF_path, threshold, output_res)) for i in range(len(GeoObsDF_files))]
 
-    for file in GeoObsDF_files:
-        args = file,GeoObsDF_path, VIIRSdata_path, ViirsGeoObsDF_path, threshold, output_res
-        geoRegionDF = single_df_VIIRS(args)
+    # for file in GeoObsDF_files:
+    #     args = file,GeoObsDF_path, VIIRSdata_path, ViirsGeoObsDF_path, threshold, output_res
+    #     geoRegionDF = single_df_VIIRS(args)
     print(f"Job complete for connecting VIIRS fsca to sites/dates, files can be found in {ViirsGeoObsDF_path}")
 
     
@@ -141,8 +141,11 @@ def single_df_VIIRS(args):
          # Merge granules
         regional_raster = createMergedRxr(region_granules["filepath"]) 
     
-
-    buffer = output_res/2
+    #set buffer around cell of interest,must be larger than 400 m
+    if output_res >799:
+        buffer = output_res/2
+    else:
+        buffer = 400
 
     adf = augmentGeoDF(geoRegionDF, regional_raster, buffer=buffer, threshold=threshold)  # Buffer by 500 meters -> 1km square
 
@@ -154,8 +157,7 @@ def single_df_VIIRS(args):
     pq.write_table(table,f"{ViirsGeoObsDF_path}/VIIRS_GeoObsDF_{timestamp}.parquet", compression='BROTLI')
 
     print(f"dataprocessing VIIRS for {timestamp} complete...")
-    #except:
-        #print(f"Error in processing {timestamp}, help me...")
+
 
 def fetchGranules(boundingBox: list[float, float, float, float],
                   dataFolder: Union[Path, str],
@@ -206,10 +208,11 @@ def download_VIIRS(boundingBox: list[float, float, float, float],
 
     if not isinstance(date, datetime):
         date = datetime.strptime(date, "%Y-%m-%d")
-        year = date.year if date.month <= 10 else date.year - 1  # Water years start on October 1st 
+        year = date.year if date.month < 10 else date.year + 1  # Water years start on October 1st 
 
     #check to see if path exists, if not make one
-    dataFolder = f"{dataFolder}/WY{year}/{year-1}-{year}NASA"
+    #dataFolder = f"{dataFolder}/WY{year}/{year-1}-{year}NASA"
+    dataFolder = f"{dataFolder}/WY{year}"
     if os.path.exists(dataFolder)== False:
         os.makedirs(dataFolder)
 
@@ -217,7 +220,6 @@ def download_VIIRS(boundingBox: list[float, float, float, float],
         dataFolder = Path(dataFolder)
         dayOfYear = date.strftime("%Y%j") 
 
-    #print(f"The DOY is : {dayOfYear}")
     
     day = date.strftime("%Y-%m-%d")
     cells["date"] = date  # record the date
@@ -230,20 +232,12 @@ def download_VIIRS(boundingBox: list[float, float, float, float],
     missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")
     attempts = 3  # how many times it will try and download the missing granules
     while shouldDownload and len(missingCells) > 0 and attempts > 0:
-        # TODO test function that fetches missing granules from NASA
-        #print(f"Missing {len(missingCells)} granules for {day}, downloading")
         temporal = format_date(date)  # Format date as YYYY-MM-DD
         bbox = format_boundingbox(boundingBox)  # Format bounding box as "W,S,E,N"
         version = "2" #if date > datetime(2018, 1, 1) else "1"  # Use version 1 if date is before 2018, looks like all products use 2 now, or this is backwards...
-        #download("VNP10A1F", version, temporal, bbox, dataFolder.joinpath(f"{year}-{year + 1}NASA"), mode="async")
         cells["filepath"] = download("VNP10A1F", version, temporal, bbox, dataFolder, mode="async") #might need try/except here...
-        # cells["filepath"] = cells.apply(
-        #     lambda x: granuleFilepath(createGranuleGlobpath(dataFolder, date, x['h'], x['v'])),
-        #     axis=1
         # )  # add filepath if it exists, otherwise add empty string
         missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")
-        # print('the updated cells after try 1...')
-        # display(cells)
         if len(missingCells) > 0:
             attempts -= 1
             print(f"still missing {len(missingCells)} granules for {day}, retrying in 30 seconds, {attempts} tries left")
@@ -271,14 +265,15 @@ def createGranuleGlobpath(dataRoot: str, date: datetime, h: int, v: int) -> str:
     WY_split = datetime(date.year, 10, 1)  # Split water years on October 1st
 
     # if day is after water year, then we need to adjust the year
-    if date.month < 10:
-        year = date.year - 1
+    if date.month > 10:
+        year = date.year + 1
         next_year = date.year
     else:
         year = date.year
-        next_year = date.year + 1
-
-    return os.path.join(dataRoot, f"WY{next_year}/{year}-{next_year}NASA/VNP10A1F_A{dayOfYear}_h{h}v{v}_*.tif")
+        next_year = date.year 
+    
+    #return os.path.join(dataRoot, f"WY{next_year}/{year}-{next_year}NASA/VNP10A1F_A{dayOfYear}_h{h}v{v}_*.tif")
+    return os.path.join(dataRoot, f"WY{next_year}/VNP10A1F_A{dayOfYear}_h{h}v{v}_*.tif")
 
 def granuleFilepath(filepath: str) -> str:
     """
@@ -330,8 +325,6 @@ def augmentGeoDF(gdf: gpd.GeoDataFrame,
 
     return gdf
 
-
-    
 
 
 def createMergedRxr(files: list[str]) -> xr.DataArray:
