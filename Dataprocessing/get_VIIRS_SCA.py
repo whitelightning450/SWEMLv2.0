@@ -6,6 +6,7 @@ from botocore.client import Config
 import os
 import zipfile
 import pandas as pd
+import numpy as np
 import geopandas as gpd
 import netrc
 import concurrent.futures as cf
@@ -23,12 +24,14 @@ import rioxarray as rxr
 from rioxarray.merge import merge_arrays
 import rasterstats as rs
 import earthaccess as ea
+from nsidc_fetch import download, format_date, format_boundingbox
 
 
 import glob
 from pprint import pprint
 from typing import Union
 from pathlib import Path
+import time
 
 '''
 To create .netrc file:
@@ -54,7 +57,7 @@ BUCKET = S3.Bucket(BUCKET_NAME)
 
 def get_VIIRS_from_AWS():
 
-    years = [2013, 2014, 2015, 2016, 2017, 2018, 2019]
+    years = [2013, 2014, 2015, 2016, 2017, 2018, 2019] #note, likely will have to redo all of these! found error
 
     for year in years:
         SCA_directory = f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}"
@@ -91,14 +94,15 @@ def augment_SCA_mutliprocessing(region, output_res, threshold):
  
     #Get list of GeoObsDF dataframes
     GeoObsDF_files = [filename for filename in os.listdir(GeoObsDF_path) if filename.endswith(".parquet")]
+    GeoObsDF_files.sort()
 
-    #GeoObsDF_files = GeoObsDF_files[:1] #This is to develop code...
+    #GeoObsDF_files = GeoObsDF_files[0:1] #This is to develop code...
 
     #This will get multiprocessed
     print(f"Getting VIIRS fsca values for {len(GeoObsDF_files)} timesteps of observations for {region}")
 
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
-    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+    with cf.ProcessPoolExecutor(max_workers=6) as executor:  #settting max works to 6 to not make NASA mad...
         # Start the load operations and mark each future with its process function
         [executor.submit(single_df_VIIRS, (GeoObsDF_files[i],GeoObsDF_path, VIIRSdata_path, ViirsGeoObsDF_path, threshold, output_res)) for i in range(len(GeoObsDF_files))]
 
@@ -110,20 +114,38 @@ def augment_SCA_mutliprocessing(region, output_res, threshold):
     
 def single_df_VIIRS(args):
     GeoObsDF_file, GeoObsDF_path,  SCA_folder, ViirsGeoObsDF_path,threshold, output_res = args
-
+   
     timestamp = GeoObsDF_file.split('_')[-1].split('.')[0]
+    print(timestamp)
 
     region_df = pd.read_parquet(os.path.join(GeoObsDF_path, GeoObsDF_file),engine='fastparquet')
+    #round lat/long, literally no need for any higher spatial resolution than 0.001 degrees, as this is ~100 m
+    region_df['cen_lon'] =np.round(region_df['cen_lon'], 3)
+    region_df['cen_lat'] =np.round(region_df['cen_lat'], 3)
+
     geoRegionDF = gpd.GeoDataFrame(region_df, geometry=gpd.points_from_xy(region_df.cen_lon, region_df.cen_lat,
                                                                             crs="EPSG:4326"))  # Convert to GeoDataFrame
     date = geoRegionDF.Date.unique().strftime('%Y-%m-%d')[0]
-    # Fetch granules
-    region_granules = fetchGranules(geoRegionDF.total_bounds, SCA_folder,
-                                    date) 
-    # Merge granules
-    regional_raster = createMergedRxr(region_granules["filepath"]) 
 
-    buffer = output_res/2
+    try:
+        # Fetch granules
+        region_granules = fetchGranules(geoRegionDF.total_bounds, SCA_folder, date) 
+         # Merge granules
+        regional_raster = createMergedRxr(region_granules["filepath"]) 
+    except:
+        print(f"No granules found for {date}, requesting data from NSIDC...")
+        #download data
+        download_VIIRS(geoRegionDF.total_bounds, SCA_folder, date)
+        # Fetch granules
+        region_granules = fetchGranules(geoRegionDF.total_bounds, SCA_folder, date) 
+         # Merge granules
+        regional_raster = createMergedRxr(region_granules["filepath"]) 
+    
+    #set buffer around cell of interest,must be larger than 400 m
+    if output_res >799:
+        buffer = output_res/2
+    else:
+        buffer = 400
 
     adf = augmentGeoDF(geoRegionDF, regional_raster, buffer=buffer, threshold=threshold)  # Buffer by 500 meters -> 1km square
 
@@ -136,11 +158,11 @@ def single_df_VIIRS(args):
 
     print(f"dataprocessing VIIRS for {timestamp} complete...")
 
+
 def fetchGranules(boundingBox: list[float, float, float, float],
                   dataFolder: Union[Path, str],
                   date: Union[datetime, str],
-                  extentDF: gpd.GeoDataFrame = None,
-                  shouldDownload: bool = False) -> gpd.GeoDataFrame:
+                  extentDF: gpd.GeoDataFrame = None) -> gpd.GeoDataFrame:
     """
             Fetches VIIRS granules from local storage.
 
@@ -154,12 +176,12 @@ def fetchGranules(boundingBox: list[float, float, float, float],
             Returns:
                 df (GeoDataFrame): A dataframe of the granules that intersect with the bounding box
         """
-    #if extentDF is None:
-    cells = calculateGranuleExtent(boundingBox, date)  # Fetch granules from API, no need to check bounding box
-    # else:
-    #     # Find granules that intersect with the bounding box
-    #     cells = extentDF.cx[boundingBox[0]:boundingBox[2],
-    #             boundingBox[1]:boundingBox[3]]  # FIXME if there is only one point, this will fail
+    if extentDF is None:
+        cells = calculateGranuleExtent(boundingBox, date)  # Fetch granules from API, no need to check bounding box
+    else:
+        # Find granules that intersect with the bounding box
+        cells = extentDF.cx[boundingBox[0]:boundingBox[2],
+                boundingBox[1]:boundingBox[3]]  # FIXME if there is only one point, this will fail
 
     if not isinstance(date, datetime):
         date = datetime.strptime(date, "%Y-%m-%d")
@@ -167,7 +189,7 @@ def fetchGranules(boundingBox: list[float, float, float, float],
     if not isinstance(dataFolder, Path):
         dataFolder = Path(dataFolder)
     
-    # day = date.strftime("%Y-%m-%d")
+    day = date.strftime("%Y-%m-%d")
     cells["date"] = date  # record the date
     cells["filepath"] = cells.apply(
         lambda x: granuleFilepath(createGranuleGlobpath(dataFolder, date, x['h'], x['v'])),
@@ -175,35 +197,55 @@ def fetchGranules(boundingBox: list[float, float, float, float],
     )  # add filepath if it exists, otherwise add empty string
     
     #display(cells)
-    #return cells
-    # missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")
-    # attempts = 3  # how many times it will try and download the missing granules
-    # while shouldDownload and len(missingCells) > 0 and attempts > 0:
-    #     # TODO test function that fetches missing granules from NASA
-    #     print(f"Missing {len(missingCells)} granules for {day}, downloading")
-    #     temporal = format_date(date)  # Format date as YYYY-MM-DD
-    #     bbox = format_boundingbox(boundingBox)  # Format bounding box as "W,S,E,N"
-    #     version = "2" if date > datetime(2018, 1, 1) else "1"  # Use version 1 if date is before 2018
-    #     year = date.year if date.month >= 10 else date.year - 1  # Water years start on October 1st
-    #     #download("VNP10A1F", version, temporal, bbox, dataFolder.joinpath(f"{year}-{year + 1}NASA"), mode="async")
-    #     download("VNP10A1F", version, temporal, bbox, dataFolder, mode="async")
-    #     cells["filepath"] = cells.apply(
-    #         lambda x: granuleFilepath(createGranuleGlobpath(dataFolder, date, x['h'], x['v'])),
-    #         axis=1
-    #     )  # add filepath if it exists, otherwise add empty string
-    #     missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")
-    #     if len(missingCells) > 0:
-    #         attempts -= 1
-    #         print(f"still missing {len(missingCells)} granules for {day}, retrying in 30 seconds, {attempts} tries left")
-    #         time.sleep(30)
-    #         print("retrying")
-    #         cells["filepath"] = cells.apply(
-    #             lambda x: granuleFilepath(createGranuleGlobpath(dataFolder, date, x['h'], x['v'])),
-    #             axis=1
-    #         )  # add filepath if it exists, otherwise add empty string
-    #         missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")  # before we try again, double check
-
     return cells
+
+def download_VIIRS(boundingBox: list[float, float, float, float],
+                  dataFolder: Union[Path, str],
+                  date: Union[datetime, str],
+                  shouldDownload = True):
+
+    cells = calculateGranuleExtent(boundingBox, date)  # Fetch granules from API, no need to check bounding box
+
+    if not isinstance(date, datetime):
+        date = datetime.strptime(date, "%Y-%m-%d")
+        year = date.year if date.month < 10 else date.year + 1  # Water years start on October 1st 
+
+    #check to see if path exists, if not make one
+    #dataFolder = f"{dataFolder}/WY{year}/{year-1}-{year}NASA"
+    dataFolder = f"{dataFolder}/WY{year}"
+    if os.path.exists(dataFolder)== False:
+        os.makedirs(dataFolder)
+
+    if not isinstance(dataFolder, Path):
+        dataFolder = Path(dataFolder)
+        dayOfYear = date.strftime("%Y%j") 
+
+    
+    day = date.strftime("%Y-%m-%d")
+    cells["date"] = date  # record the date
+    cells["filepath"] = cells.apply(
+        lambda x: granuleFilepath(createGranuleGlobpath(dataFolder, date, x['h'], x['v'])),
+        axis=1
+                )  #
+    # display(cells)
+    #This line of code goes and gets the data if it is not in folder
+    missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")
+    attempts = 3  # how many times it will try and download the missing granules
+    while shouldDownload and len(missingCells) > 0 and attempts > 0:
+        temporal = format_date(date)  # Format date as YYYY-MM-DD
+        bbox = format_boundingbox(boundingBox)  # Format bounding box as "W,S,E,N"
+        version = "2" #if date > datetime(2018, 1, 1) else "1"  # Use version 1 if date is before 2018, looks like all products use 2 now, or this is backwards...
+        cells["filepath"] = download("VNP10A1F", version, temporal, bbox, dataFolder, mode="async") #might need try/except here...
+        # )  # add filepath if it exists, otherwise add empty string
+        missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")
+        if len(missingCells) > 0:
+            attempts -= 1
+            print(f"still missing {len(missingCells)} granules for {day}, retrying in 30 seconds, {attempts} tries left")
+            time.sleep(30)
+            print("retrying")
+            cells["filepath"] = download("VNP10A1F", version, temporal, bbox, dataFolder, mode="async") 
+            missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")  # before we try again, double check
+    print('Processing data for dataframe now...')
 
 def createGranuleGlobpath(dataRoot: str, date: datetime, h: int, v: int) -> str:
     """
@@ -223,14 +265,15 @@ def createGranuleGlobpath(dataRoot: str, date: datetime, h: int, v: int) -> str:
     WY_split = datetime(date.year, 10, 1)  # Split water years on October 1st
 
     # if day is after water year, then we need to adjust the year
-    if date.month < 10:
-        year = date.year - 1
+    if date.month > 10:
+        year = date.year + 1
         next_year = date.year
     else:
         year = date.year
-        next_year = date.year + 1
-
-    return os.path.join(dataRoot, f"WY{next_year}/{year}-{next_year}NASA/VNP10A1F_A{dayOfYear}_h{h}v{v}_*.tif")
+        next_year = date.year 
+    
+    #return os.path.join(dataRoot, f"WY{next_year}/{year}-{next_year}NASA/VNP10A1F_A{dayOfYear}_h{h}v{v}_*.tif")
+    return os.path.join(dataRoot, f"WY{next_year}/VNP10A1F_A{dayOfYear}_h{h}v{v}_*.tif")
 
 def granuleFilepath(filepath: str) -> str:
     """
@@ -282,8 +325,6 @@ def augmentGeoDF(gdf: gpd.GeoDataFrame,
 
     return gdf
 
-
-    
 
 
 def createMergedRxr(files: list[str]) -> xr.DataArray:
