@@ -81,7 +81,7 @@ def process_single_timestamp(args):
     timestamp = aso_swe_file.split('_')[-1].split('.')[0]
 
     #load in SWE data from ASO
-    aso_swe_data = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file), engine='fastparquet')
+    aso_swe_data = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file))
 
     #drop duplicate sites/spatial area, average the spatial area per cell_id
     aso_swe_data.reset_index(inplace=True)

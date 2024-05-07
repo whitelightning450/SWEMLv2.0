@@ -376,7 +376,7 @@ class ASODataProcessing:
         parquet_folder = os.path.join(dir, f"{region}/{output_res}M_SWE_parquet")
         for parquet_file in tqdm(os.listdir(parquet_folder)):
             try:
-                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file), engine='fastparquet')
+                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
             except:# add x number of attempts
                 print(f"Bad file conversion for {parquet_file}, attempting to reprocess")
                 tiff_file = f"ASO_{output_res}M_{parquet_file[-16:-8]}.tif"
@@ -388,7 +388,7 @@ class ASODataProcessing:
                 try:
                     print('Attempt 2')
                     # try to reloade again
-                    aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file), engine='fastparquet')
+                    aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
                     print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
                 except:
                     # redo function to convert tiff to parquet
@@ -396,7 +396,7 @@ class ASODataProcessing:
                     try:
                         print('Attempt 3')
                         # try to reloade again
-                        aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file), engine='fastparquet')
+                        aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
                         print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
                     except:
                         # redo function to convert tiff to parquet
@@ -404,7 +404,7 @@ class ASODataProcessing:
                         try:
                             print('Attempt 4')
                             # try to reloade again
-                            aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file), engine='fastparquet')
+                            aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
                             print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
                         except:
                             # redo function to convert tiff to parquet
@@ -412,7 +412,7 @@ class ASODataProcessing:
                             try:
                                 print('Attempt 5')
                                 # try to reloade again
-                                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file), engine='fastparquet')
+                                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
                                 print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
                             except:
                                 # redo function to convert tiff to parquet
@@ -434,102 +434,4 @@ class ASODataProcessing:
         cell_id = f"{region}_{output_res}M_{cen_lat}_{cen_lon}"
         return cell_id
 
-    # def process_folder(self, input_folder, output_folder, region, output_res):
-
-    #     # Import the metadata into a pandas DataFrame
-    #     input_folder = f"{HOME}/SWEMLv2.0/data/{input_folder}"
-    #     output_folder = f"{HOME}/SWEMLv2.0/data/{output_folder}"
-
-    #     if not os.path.exists(input_folder):
-    #         os.makedirs(input_folder, exist_ok=True)
-    #     if not os.path.exists(output_folder):
-    #         os.makedirs(output_folder, exist_ok=True)
-
-    #     aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
-
-    #     metadf = pd.DataFrame()
-    #     print('Loading all Geospatial prediction/observation files and concatenating into one dataframe')
-    #     for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
-    #         try:
-    #             aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file), engine='fastparquet')
-    #             metadf = pd.concat([metadf, aso_file])
-    #         except:
-    #             print(aso_swe_file)
-
-    #     print('Identifying unique sites to create geophysical information dataframe') 
-    #     cols = ['cen_lat', 'cen_lon']
-    #     metadf = metadf[cols]
-    #     tqdm.pandas()
-    #     metadf['cell_id'] = metadf.progress_apply(lambda row: self.make_cell_id(region, output_res, row['cen_lat'], row['cen_lon']), axis=1)
-
-    #     metadf.drop_duplicates('cell_id').set_index('cell_id', inplace=True)
-
-    #     print("Applying polygon geometries, please be patient, this step can take a few minutes...")
-    #     metadf = metadf.drop(columns=['Unnamed: 0'], axis=1)
-    #     tqdm.pandas()
-    #     metadf['geometry'] = metadf.progress_apply(self.create_polygon, axis=1)
     
-    #     # Convert the DataFrame to a GeoDataFrame
-    #     # print("Converting to GeoDataFrame")
-    #     # metadata = gpd.GeoDataFrame(metadf, geometry='geometry')
-    
-    #     # List all parquet files in the input folder
-    #     parquet_files = [f for f in os.listdir(input_folder) if f.endswith('.parquet')]
-
-    #     print(f"Processing {len(parquet_files)} files for dataframe development")
-
-    #     # Create parquet files from TIFF files
-    #     with cf.ProcessPoolExecutor(max_workers=None) as executor: 
-    #     # Start the load operations and mark each future with its process function
-    #         [executor.submit(self.file_2_geodataframe_single, (input_folder, output_folder, parquet_files[i], metadata_df )) for i in tqdm(range(len(parquet_files)))]
-             
-    # def file_2_geodataframe_single(self, args):
-    #     input_folder, output_folder, parquet_file, metadata_df = args
-        
-    #     input_aso_path = os.path.join(input_folder, parquet_file)
-    #     output_aso_path = os.path.join(output_folder, parquet_file)
-
-    #     # Process each parquet file
-    #     aso_swe_df = pd.read_parquet(input_aso_path, engine='fastparquet')
-
-    #     # Convert the "aso_swe_df" into a GeoDataFrame with point geometries
-    #     geometry = [Point(xy) for xy in zip(aso_swe_df['cen_lon'], aso_swe_df['cen_lat'])]
-    #     aso_swe_geo = gpd.GeoDataFrame(aso_swe_df, geometry=geometry)
-
-    #     result = gpd.sjoin(aso_swe_geo, metadata_df, how='left', predicate='within', op = 'intersects')
-
-    #     # Select specific columns for the final DataFrame
-    #     Final_df = result[['cen_lat', 'cen_lon', 'swe_m', 'cell_id']]
-
-    #     #Convert DataFrame to Apache Arrow Table and save as parquet file with Brotli compression
-    #     table = pa.Table.from_pandas(Final_df)
-    #     pq.write_table(table, output_aso_path, compression='BROTLI')
-        
-            
-    # def converting_ASO_to_standardized_format(self, input_folder, output_csv):
-        
-    #     # Initialize an empty DataFrame to store the final transformed data
-    #     final_df = pd.DataFrame()
-    
-    #     # Iterate through all CSV files in the directory
-    #     for filename in os.listdir(input_folder):
-    #         if filename.endswith(".csv"):
-    #             file_path = os.path.join(input_folder, filename)
-    
-    #             # Extract the time frame from the filename
-    #             time_frame = filename.split('_')[-1].split('.')[0]
-    
-    #             # Read the CSV file into a DataFrame
-    #             df = pd.read_csv(file_path)
-    
-    #             # Rename the 'SWE' column to the time frame for clarity
-    #             df = df.rename(columns={'SWE': time_frame})
-    
-    #             # Merge or concatenate the data into the final DataFrame
-    #             if final_df.empty:
-    #                 final_df = df
-    #             else:
-    #                 final_df = pd.merge(final_df, df, on='cell_id', how='outer')
-    
-    #     # Save the final transformed DataFrame to a single CSV file
-    #     final_df.to_csv(output_csv, index=False)

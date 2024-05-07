@@ -178,7 +178,7 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     #build in method for adding to existing dictionary rather than rerunning for entire region...
     print('Loading all Geospatial prediction/observation files and concatenating into one dataframe')
     for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
-        aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file), engine='fastparquet')
+        aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file))
         ASO_meta_loc_DF = pd.concat([ASO_meta_loc_DF, aso_file])
 
     
@@ -212,7 +212,7 @@ def fetch_snotel_sites_for_cellids(region, output_res):
 
 def GeoSpatial(region, output_res):
     print(f"Loading geospatial data for {region}")
-    ASO_meta_loc_DF = pd.read_parquet(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/ASO_meta.parquet", engine='fastparquet')
+    ASO_meta_loc_DF = pd.read_parquet(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/ASO_meta.parquet")
 
     cols = ['cen_lat', 'cen_lon']
     ASO_meta_loc_DF = ASO_meta_loc_DF[cols]
@@ -364,7 +364,7 @@ def add_geospatial_threaded(region, output_res):
 
     #Get Geospatial meta data
     print(f"Loading goeospatial meta data for grids in {region}")
-    aso_gdf = pd.read_parquet(f"{TrainingDFpath}/{region}_metadata.parquet", engine='fastparquet')
+    aso_gdf = pd.read_parquet(f"{TrainingDFpath}/{region}_metadata.parquet")
 
     #create dataframe
     print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
@@ -383,7 +383,7 @@ def add_geospatial_single(args):
 
     aso_swe_path, aso_swe_file, aso_gdf, GeoObsdfs = args
 
-    ObsDF = pd.read_parquet(f"{aso_swe_path}/{aso_swe_file}", engine='fastparquet')
+    ObsDF = pd.read_parquet(f"{aso_swe_path}/{aso_swe_file}")
 
     #combine df with geospatial meta data
     final_df = pd.merge(ObsDF, aso_gdf, on = 'cell_id', how = 'left')
