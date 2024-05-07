@@ -118,7 +118,7 @@ def single_df_VIIRS(args):
     timestamp = GeoObsDF_file.split('_')[-1].split('.')[0]
     print(timestamp)
 
-    region_df = pd.read_parquet(os.path.join(GeoObsDF_path, GeoObsDF_file),engine='fastparquet')
+    region_df = pd.read_parquet(os.path.join(GeoObsDF_path, GeoObsDF_file))
     #round lat/long, literally no need for any higher spatial resolution than 0.001 degrees, as this is ~100 m
     region_df['cen_lon'] =np.round(region_df['cen_lon'], 3)
     region_df['cen_lat'] =np.round(region_df['cen_lat'], 3)
