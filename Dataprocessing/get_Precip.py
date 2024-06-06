@@ -169,6 +169,8 @@ def ProcessDates(args):
 
 def Make_Precip_DF(region, output_res, threshold):
 
+    print(f"Adding precipitation features to ML dataframe for the {region} region.")
+
 #precip and 
     Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites/"
     DFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
