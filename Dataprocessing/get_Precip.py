@@ -4,6 +4,7 @@ import ee #pip install earthengine-api
 import EE_funcs
 import os
 from tqdm import tqdm
+from tqdm.notebook import tqdm_notebook
 import concurrent.futures as cf
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -148,19 +149,6 @@ def get_precip_threaded(region, output_res, WYs):
     
     
     print(f"Job complete for getting precipiation datdata for WY{year}, processing dataframes for file storage")
-    # #combine all sites/obs
-    # WY_precip = pd.concat(PrecipDict.values(), ignore_index=True)
-
-    # #separate by date
-    # datesds = WY_precip.datetime.unique()
-
-    # print(f"Processing cells values into {len(datesds)} datetime files for reduced storage")
-    # with cf.ProcessPoolExecutor(max_workers=None) as executor: 
-    #     # Start the load operations and mark each future with its process function
-    #     [executor.submit(ProcessDates, (date, WY_precip, Precippath)) for date in tqdm(datesds)]
-
-    # print(f"Job complete, all precipitation data can be found in {Precippath}")
-
 
 
 def ProcessDates(args):
@@ -176,3 +164,63 @@ def ProcessDates(args):
     table = pa.Table.from_pandas(precipdf)
     # Parquet with Brotli compression
     pq.write_table(table, f"{Precippath}/NLDAS_PPT_{filed}.parquet", compression='BROTLI')
+
+
+
+def Make_Precip_DF(region, output_res, threshold):
+
+#precip and 
+    Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites/"
+    DFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+
+    #make precip df path
+    PrecipDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs_{threshold}_fSCA_Thresh"
+    if not os.path.exists(PrecipDFpath):
+        os.makedirs(PrecipDFpath, exist_ok=True)
+
+    #Get list of dataframes
+    GeoObsDF_files = [filename for filename in os.listdir(DFpath)]
+    pptfiles = [filename for filename in os.listdir(Precippath)]
+
+    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+        # Start the load operations and mark each future with its process function
+        [executor.submit(single_date_add_precip, (DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region)) for geofile in GeoObsDF_files]
+    # for geofile in GeoObsDF_files:
+    #     single_date_add_precip((DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region))
+       
+
+
+
+#multiprocess this first step
+def single_date_add_precip(args):
+    DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region = args
+    #get date information
+    date = geofile.split('VIIRS_GeoObsDF_')[-1].split('.parquet')[0]
+    year = date[:4]
+    mon = date[4:6]
+    day = date[6:]
+    strdate = f"{year}-{mon}-{day}"
+    print(f"Connecting precipitation to ASO observations for {region} on {strdate}")
+
+    GDF = pd.read_parquet(os.path.join(DFpath, geofile))
+    GDF.set_index('cell_id', inplace = True)
+    GDF['season_precip_cm'] = 0.0
+    #get unique cells
+    unique_cells = list(GDF.index)
+    for pptfile in tqdm_notebook(pptfiles):
+        #try:
+        ppt = pd.read_parquet(f"{Precippath}/{pptfile}")
+        ppt.rename(columns={'datetime':'Date'}, inplace = True)
+        cell = ppt['cell_id'].values[0]
+        if cell in unique_cells:
+            GDF.loc[cell,'season_precip_cm'] = round(ppt['season_precip_cm'][ppt['Date']== strdate].values[0],1)
+        else:
+            pass
+        #except:
+         #   print(f"{pptfile} is bad, delete file from folder and rerun the get precipitation script")
+
+    #GDF.to_parquet(f"{PrecipDFpath}/Precip_{geofile}", compression='BROTLI')
+    #Convert DataFrame to Apache Arrow Table
+    table = pa.Table.from_pandas(GDF)
+    # Parquet with Brotli compression
+    pq.write_table(table, f"{PrecipDFpath}/Precip_{geofile}", compression='BROTLI')
