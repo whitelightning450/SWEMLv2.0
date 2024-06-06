@@ -25,23 +25,18 @@ import requests
 import concurrent.futures as cf
 import s3fs
 import get_InSitu_obs
+import pickle as pkl
+import warnings; warnings.filterwarnings("ignore")
 
 #need to mamba install gdal, earthaccess 
 #pip install pystac_client, richdem, planetary_computer, dask, distributed, retrying
 
 #connecting to AWS
-import warnings; warnings.filterwarnings("ignore")
 import boto3
-import pickle as pkl
-'''
-To create .netrc file:
-import earthaccess
-earthaccess.login(persist=True)
-'''
 
 #load access key
 HOME = os.path.expanduser('~')
-KEYPATH = "SWEML/AWSaccessKeys.csv"
+KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
 ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
 
 #start session
