@@ -27,6 +27,7 @@ def GetSeasonalAccumulatedPrecipSingleSite(args):
         # Gett lat/long from meta file
         poi = ee.Geometry.Point(lon, lat)
 
+
         #Get precipitation
         precip_poi = precip.getRegion(poi, output_res).getInfo()
         site_precip = EE_funcs.ee_array_to_df(precip_poi,['total_precipitation'])
@@ -41,6 +42,7 @@ def GetSeasonalAccumulatedPrecipSingleSite(args):
         site_precip.rename(columns={'total_precipitation':'daily_precipitation_cm'}, inplace = True)
         site_precip.pop('time')
         site_precip.set_index('datetime',inplace=True)
+
 
         #do precip cumulative per water year
         #get unique water years
@@ -70,9 +72,9 @@ def GetSeasonalAccumulatedPrecipSingleSite(args):
             #save each year as a dic
             WY_Precip[f"WY{year}"] = WY[mask].reset_index(drop = True)
 
+
         #PrecipDict[cell_id] = pd.concat(WY_Precip.values(), ignore_index=True)
         df = pd.concat(WY_Precip.values(), ignore_index=True)
-
         table = pa.Table.from_pandas(df)
         # Parquet with Brotli compression
         pq.write_table(table, f"{Precippath}/NLDAS_PPT_{cell_id}.parquet", compression='BROTLI')
@@ -110,6 +112,23 @@ def get_precip_threaded(region, output_res, WYs):
     dates.sort()
     enddate = dates[-1]
 
+    print(dates)
+
+    #get only water years with ASO observations
+    ASO_WYs = []
+    WYdict = {}
+    for year in WYs:
+        try:
+            WYdict[f"WY{year}"] = [d for d in dates if str(year) in d]
+            WYdict[f"WY{year}"].sort()
+            startdate_exception = f"{year-1}-10-01"
+            enddate_exception =WYdict[f"WY{year}"][-1]
+            ASO_WYs.append(year)
+        except:
+            print(f"No ASO observations for WY{year}")
+
+    print(ASO_WYs)
+
     #NLDAS precipitation
     precip = ee.ImageCollection('NASA/NLDAS/FORA0125_H002').select('total_precipitation').filterDate(startdate, enddate)
 
@@ -120,11 +139,11 @@ def get_precip_threaded(region, output_res, WYs):
     #create dictionary for year
     #PrecipDict ={}
     with cf.ThreadPoolExecutor(max_workers=None) as executor: #seems that they done like when we shoot tons of threads to get data...
-        {executor.submit(GetSeasonalAccumulatedPrecipSingleSite, (Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, WYs)):
+        {executor.submit(GetSeasonalAccumulatedPrecipSingleSite, (Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs)):
                 i for i in tqdm(range(nsites))}
         
     # for i in tqdm(range(nsites)): #trying for loop bc multithreader not working....
-    #     args = Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, WYs
+    #     args = Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs
     #     GetSeasonalAccumulatedPrecipSingleSite(args)
     
     
