@@ -33,7 +33,7 @@ def GetSeasonalAccumulatedPrecipSingleSite(args):
         precip_poi = precip.getRegion(poi, output_res).getInfo()
         site_precip = EE_funcs.ee_array_to_df(precip_poi,['total_precipitation'])
 
-        #Precipitation
+        #Precipitation, do a different resample to get hourly precip and connect with temp to determine precip phase
         site_precip.set_index('datetime', inplace = True)
         site_precip = site_precip.resample(temporal_resample).sum()
         site_precip.reset_index(inplace = True)
@@ -52,7 +52,7 @@ def GetSeasonalAccumulatedPrecipSingleSite(args):
         for year in WYs:
             WYdict[f"WY{year}"] = [d for d in dates if str(year) in d]
             WYdict[f"WY{year}"].sort()
-            startdate = f"{year-1}-10-01"
+            startdate = f"{year-1}-09-30"
             enddate =WYdict[f"WY{year}"][-1]
 
             #select dates within water year
@@ -101,7 +101,7 @@ def get_precip_threaded(region, output_res, WYs):
     aso_swe_files = [filename for filename in os.listdir(aso_swe_files_folder_path)]
     aso_swe_files.sort()
     startyear = int(aso_swe_files[0][-16:-12])-1
-    startdate = f"{startyear}-10-01"
+    startdate = f"{startyear}-09-30"
 
     dates = []
     for file in aso_swe_files:
@@ -112,6 +112,8 @@ def get_precip_threaded(region, output_res, WYs):
         dates.append(enddate)
     dates.sort()
     enddate = dates[-1]
+    enddate = pd.to_datetime(enddate)+pd.Timedelta(days=1)
+    enddate =enddate.strftime('%Y-%m-%d')
 
     print(dates)
 
@@ -128,7 +130,7 @@ def get_precip_threaded(region, output_res, WYs):
         except:
             print(f"No ASO observations for WY{year}")
 
-    print(ASO_WYs)
+    print(ASO_WYs, startdate, enddate)
 
     #NLDAS precipitation
     precip = ee.ImageCollection('NASA/NLDAS/FORA0125_H002').select('total_precipitation').filterDate(startdate, enddate)
@@ -139,7 +141,7 @@ def get_precip_threaded(region, output_res, WYs):
     print(f"Getting daily precipitation data for {nsites} sites")
     #create dictionary for year
     #PrecipDict ={}
-    with cf.ThreadPoolExecutor(max_workers=None) as executor: #seems that they done like when we shoot tons of threads to get data...
+    with cf.ThreadPoolExecutor(max_workers=None) as executor: #seems that they dont like when we shoot tons of threads to get data...
         {executor.submit(GetSeasonalAccumulatedPrecipSingleSite, (Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs)):
                 i for i in tqdm(range(nsites))}
         
@@ -170,8 +172,8 @@ def ProcessDates(args):
 def Make_Precip_DF(region, output_res, threshold):
 
     print(f"Adding precipitation features to ML dataframe for the {region} region.")
-
-#precip and 
+   # try:
+    #precip and 
     Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites/"
     DFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
 
@@ -189,6 +191,8 @@ def Make_Precip_DF(region, output_res, threshold):
         [executor.submit(single_date_add_precip, (DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region)) for geofile in GeoObsDF_files]
     # for geofile in GeoObsDF_files:
     #     single_date_add_precip((DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region))
+    # except:
+    #     print(f"No ASO observations/dataframe to add NLDAS precipitation to in {region}, skipping")
        
 
 
@@ -208,18 +212,27 @@ def single_date_add_precip(args):
     GDF.set_index('cell_id', inplace = True)
     GDF['season_precip_cm'] = 0.0
     #get unique cells
-    unique_cells = list(GDF.index)
-    for pptfile in tqdm_notebook(pptfiles):
-        #try:
-        ppt = pd.read_parquet(f"{Precippath}/{pptfile}")
-        ppt.rename(columns={'datetime':'Date'}, inplace = True)
-        cell = ppt['cell_id'].values[0]
-        if cell in unique_cells:
-            GDF.loc[cell,'season_precip_cm'] = round(ppt['season_precip_cm'][ppt['Date']== strdate].values[0],1)
-        else:
-            pass
-        #except:
-         #   print(f"{pptfile} is bad, delete file from folder and rerun the get precipitation script")
+    sites = list(GDF.index)
+    for site in tqdm_notebook(sites):
+        try:
+            ppt = pd.read_parquet(f"{Precippath}/NLDAS_PPT_{site}.parquet")
+            ppt.rename(columns={'datetime':'Date'}, inplace = True)
+            #cell = ppt['cell_id'].values[0]
+        #if cell in unique_cells:
+         #   try:
+            GDF.loc[site,'season_precip_cm'] = round(ppt['season_precip_cm'][ppt['Date']== strdate].values[0],1)
+            # except:
+            #     print(cell)
+            #     print(strdate)
+            #     print(geofile)
+            #     print(DFpath)
+            #     display(GDF.loc[cell])
+            #     display(ppt)
+            #     exit()
+        # else:
+        #     pass
+        except:
+           print(f"{site} is bad, delete file from folder and rerun the get precipitation script")
 
     #GDF.to_parquet(f"{PrecipDFpath}/Precip_{geofile}", compression='BROTLI')
     #Convert DataFrame to Apache Arrow Table
