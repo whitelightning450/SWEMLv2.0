@@ -25,7 +25,6 @@ from osgeo import gdalconst
 
 # Data Access Packages
 import earthaccess as ea
-import h5py
 import pickle
 import pystac_client
 import richdem as rd
@@ -47,12 +46,12 @@ from tqdm._tqdm_notebook import tqdm_notebook
 import time
 import requests
 import concurrent.futures as cf
-import dask
-import dask.dataframe as dd
-from dask.distributed import progress
-from dask.distributed import Client
-from dask.diagnostics import ProgressBar
-from retrying import retry
+# import dask
+# import dask.dataframe as dd
+# from dask.distributed import progress
+# from dask.distributed import Client
+# from dask.diagnostics import ProgressBar
+#from retrying import retry
 import fiona
 import re
 import s3fs

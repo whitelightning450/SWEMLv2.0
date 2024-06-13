@@ -279,12 +279,6 @@ def Get_Monitoring_Data_Threaded_dp(years, start_m_d, end_m_d, WY=True):
         # Parquet with Brotli compression
         pq.write_table(table,f"{snotel_path}/{year}_ground_measures_dp.parquet", compression='BROTLI')
 
-        #df = pd.concat([df, SWE_df])
-
-
-
-    return bad_sites
-
 
 def get_SNOTEL_Threaded_dp(args):
     SWE_df,sitecode, start_date, end_date, bad_sites = args
@@ -371,6 +365,17 @@ def make_dates(years, start_m_d, end_m_d, WY = True):
     datelist = [d.strftime("%Y-%m-%d") for d in datelist]
 
     return datelist
+
+def combine_dfs(years):
+    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data"
+    df = pd.DataFrame()
+    for year in years:
+        year_df = pd.read_parquet(f"{snotel_path}/{year}_ground_measures_dp.parquet")
+        df = pd.concat([df, year_df])
+
+    table = pa.Table.from_pandas(df)
+    # Parquet with Brotli compression
+    pq.write_table(table,f"{snotel_path}/ground_measures_dp.parquet", compression='BROTLI')
 
 
 #def In_Situ_DataProcessing():

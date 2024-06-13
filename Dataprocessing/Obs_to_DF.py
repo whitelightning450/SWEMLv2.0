@@ -56,7 +56,7 @@ def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_d
     try:
         cell_id = row['cell_id']
         station_ids = nearest_snotel[cell_id]
-        station_mapping = {old_id: f"nearest_site_{i+1}" for i, old_id in enumerate(station_ids)}
+        station_mapping = {old_id: f"ns_{i+1}" for i, old_id in enumerate(station_ids)}
         cols = ['station_id', timestamp]
         selected_snotel_data = snotel_data_f[cols]
         # # Rename the station IDs in the selected SNOTEL data
@@ -111,8 +111,7 @@ def process_single_timestamp(args):
         Obsdf = pd.concat([Obsdf, aso_swe_data], ignore_index=True)
 
     cols = [
-    'cell_id', 'Date', 'swe_m', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
-    'nearest_site_5', 'nearest_site_6'
+    'cell_id', 'Date', 'swe_m', 'ns_1', 'ns_2', 'ns_3', 'ns_4', 'ns_5', 'ns_6'
     ]
 
     Obsdf = Obsdf[cols]
@@ -126,7 +125,8 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     print('Connecting site observations with nearest monitoring network obs')
     #get Snotel observations
     snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
-    Snotelobs_path = f"{snotel_path}ground_measures.parquet"
+    #Snotelobs_path = f"{snotel_path}ground_measures.parquet"
+    Snotelobs_path = f"{snotel_path}ground_measures_dp.parquet"
     #nearest snotel path
     nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
     #ASO observations
