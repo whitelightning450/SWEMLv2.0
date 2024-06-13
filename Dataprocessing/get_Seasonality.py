@@ -21,7 +21,7 @@ def DOS(date):
     return int(date)+Oct_Dec_days
 
 def seasonal_site_rel(df):
-    cols = ['nearest_site_1','nearest_site_2','nearest_site_3','nearest_site_4','nearest_site_5','nearest_site_6']
+    cols = ['ns_1','ns_2','ns_3','ns_4','ns_5','ns_6']
     for col in cols:
         newcol = f"Seasonal_{col}_rel"
         weekcol = f"{col}_week_mean"
@@ -59,16 +59,16 @@ def match_nearest_snotel(cell_id, WY_Week, n_snotel, ss_df):
     nearest_sites = n_snotel[str(cell_id)]
     ss_df = ss_df[nearest_sites]
     ss_df = pd.DataFrame(ss_df.loc[WY_Week]).T
-    ss_df.rename(columns = {nearest_sites[0]:'nearest_site_1_week_mean',
-                            nearest_sites[1]:'nearest_site_2_week_mean',
-                            nearest_sites[2]:'nearest_site_3_week_mean',
-                            nearest_sites[3]:'nearest_site_4_week_mean',
-                            nearest_sites[4]:'nearest_site_5_week_mean',
-                            nearest_sites[5]:'nearest_site_6_week_mean'
+    ss_df.rename(columns = {nearest_sites[0]:'ns_1_week_mean',
+                            nearest_sites[1]:'ns_2_week_mean',
+                            nearest_sites[2]:'ns_3_week_mean',
+                            nearest_sites[3]:'ns_4_week_mean',
+                            nearest_sites[4]:'ns_5_week_mean',
+                            nearest_sites[5]:'ns_6_week_mean'
                             }, inplace = True)
     
     #return ss_df
-    arg =  ss_df['nearest_site_1_week_mean'].values[0], ss_df['nearest_site_2_week_mean'].values[0], ss_df['nearest_site_3_week_mean'].values[0], ss_df['nearest_site_4_week_mean'].values[0], ss_df['nearest_site_5_week_mean'].values[0], ss_df['nearest_site_6_week_mean'].values[0]
+    arg =  ss_df['ns_1_week_mean'].values[0], ss_df['ns_2_week_mean'].values[0], ss_df['ns_3_week_mean'].values[0], ss_df['ns_4_week_mean'].values[0], ss_df['ns_5_week_mean'].values[0], ss_df['ns_6_week_mean'].values[0]
 
     return arg
 
@@ -98,7 +98,7 @@ def add_nearest_snotel_ave(df, region, output_res):
     #Get historical averages
     tqdm.pandas()
     hist_site_ave = df.progress_apply(lambda df: match_nearest_snotel(df['cell_id'], df['WY_week'], n_snotel, ss_df), axis=1)
-    hist_site_ave = pd.DataFrame.from_records(hist_site_ave, columns=['nearest_site_1_week_mean', 'nearest_site_2_week_mean','nearest_site_3_week_mean','nearest_site_4_week_mean','nearest_site_5_week_mean','nearest_site_6_week_mean'])
+    hist_site_ave = pd.DataFrame.from_records(hist_site_ave, columns=['ns_1_week_mean', 'ns_2_week_mean','ns_3_week_mean','ns_4_week_mean','ns_5_week_mean','ns_6_week_mean'])
     #merge with training DF
     df = pd.concat([df, hist_site_ave], axis =1)
 

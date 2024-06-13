@@ -25,7 +25,7 @@ from osgeo import gdalconst
 
 # Data Access Packages
 import earthaccess as ea
-import h5py
+# import h5py
 import pickle
 from pystac_client import Client
 import richdem as rd
@@ -45,12 +45,12 @@ from pathlib import Path
 from tqdm import tqdm
 import time
 import requests
-import dask
-import dask.dataframe as dd
-from dask.distributed import progress
-from dask.distributed import Client
-from dask.diagnostics import ProgressBar
-from retrying import retry
+# import dask
+# import dask.dataframe as dd
+# from dask.distributed import progress
+# from dask.distributed import Client
+# from dask.diagnostics import ProgressBar
+#from retrying import retry
 import fiona
 import re
 import s3fs
@@ -152,15 +152,14 @@ class ASODataTool:
     @staticmethod
     def get_bounding_box(region):
         dpath = f"{HOME}/SWEMLv2.0/data/PreProcessed"
-        try:
-            regions = pd.read_pickle(f"{dpath}/RegionVal.pkl")
-        except:
-            print('File not local, getting from AWS S3.')
-            if not os.path.exists(dpath):
-                os.makedirs(dpath, exist_ok=True)
-            key = f"data/PreProcessed/RegionVal.pkl"            
-            S3.meta.client.download_file(BUCKET_NAME, key,f"{dpath}/RegionVal.pkl")
-            regions = pd.read_pickle(f"{dpath}/RegionVal.pkl")
+        regions = pd.read_pickle(f"{dpath}/SWEMLV2Regions.pkl")
+        # except:
+        #     print('File not local, getting from AWS S3.')
+        #     if not os.path.exists(dpath):
+        #         os.makedirs(dpath, exist_ok=True)
+        #     key = f"data/PreProcessed/RegionVal.pkl"            
+        #     S3.meta.client.download_file(BUCKET_NAME, key,f"{dpath}/RegionVal.pkl")
+        #     regions = pd.read_pickle(f"{dpath}/RegionVal.pkl")
 
 
         
@@ -381,7 +380,6 @@ class ASODataProcessing:
                 print(f"Bad file conversion for {parquet_file}, attempting to reprocess")
                 tiff_file = f"ASO_{output_res}M_{parquet_file[-16:-8]}.tif"
                 print(tiff_file)
-                folder = f"{HOME}/SWEMLv2.0/data/ASO/S_Sierras/Processed_{output_res}M_SWE"
                 # redo function to convert tiff to parquet
                 args = folder, tiff_file, output_res, region, dir
                 self.process_single_ASO_file(args)
