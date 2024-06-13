@@ -20,6 +20,14 @@ def DOS(date):
 
     return int(date)+Oct_Dec_days
 
+def seasonal_site_rel(df):
+    cols = ['nearest_site_1','nearest_site_2','nearest_site_3','nearest_site_4','nearest_site_5','nearest_site_6']
+    for col in cols:
+        newcol = f"Seasonal_{col}_rel"
+        weekcol = f"{col}_week_mean"
+        df[newcol] = df[col]/df[weekcol]
+    return df
+
 def add_Seasonality(region, output_res, threshold):
     #load dataframe
     DFpath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs_{threshold}_fSCA_Thresh'
@@ -28,7 +36,7 @@ def add_Seasonality(region, output_res, threshold):
         os.makedirs(Savepath, exist_ok=True)
 
     files = [filename for filename in os.listdir(DFpath)]
-    print(f"Adding Day of Season to all {region} dataframes...")
+    print(f"Adding Day of Season, seasonal nearest monitoring site averages, and seasonal nearest monitoring site relationship to averages to all {region} dataframes...")
     for file in tqdm_notebook(files):
         df = pd.read_parquet(os.path.join(DFpath, file))
         #add day of season info
@@ -36,6 +44,9 @@ def add_Seasonality(region, output_res, threshold):
 
         #add the in situ metrics here
         df = add_nearest_snotel_ave(df, region, output_res)
+
+        #add seasonal relationship for nearest sites to current obs
+        df = seasonal_site_rel(df)
 
         coldrop = ['week_id','year','Oct1st_weekid','EOY_weekid']
         df.drop(columns = coldrop, inplace =  True)
