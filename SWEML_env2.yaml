@@ -1,4 +1,4 @@
-name: SWEML_env3
+name: SWEML_env2
 channels:
   - defaults
   - conda-forge
@@ -283,7 +283,6 @@ dependencies:
       - referencing==0.34.0
       - requests-oauthlib==1.4.0
       - retrying==1.3.4
-      - richdem==0.3.4
       - rioxarray==0.15.0
       - rpds-py==0.18.0
       - rsa==4.9
@@ -320,4 +319,4 @@ dependencies:
       - xarray==2022.6.0
       - xyzservices==2023.10.1
       - zict==3.0.0
-prefix: /home/rjohnson18/envs/SWEML_env3
+prefix: /home/rjohnson18/envs/SWEML_env2
