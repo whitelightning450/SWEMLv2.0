@@ -1,0 +1,37 @@
+Transaction
+
+  Prefix: /home/rjohnson18/envs/SWEML_env2
+
+  Updating specs:
+
+   - scipy
+   - ca-certificates
+   - certifi
+   - openssl
+
+
+  Package         Version  Build           Channel                  Size
+──────────────────────────────────────────────────────────────────────────
+  Install:
+──────────────────────────────────────────────────────────────────────────
+
+  + pybind11-abi        4  hd3eb1b0_1      pkgs/main/noarch       Cached
+  + scipy          1.13.1  py39heeff2f4_0  pkgs/main/linux-64       23MB
+
+  Summary:
+
+  Install: 2 packages
+
+  Total download: 23MB
+
+──────────────────────────────────────────────────────────────────────────
+
+
+Confirm changes: [Y/n] 
+Looking for: ['scipy']
+
+
+Pinned packages:
+  - python 3.9.*
+
+
