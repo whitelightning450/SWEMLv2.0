@@ -1,4 +1,4 @@
-name: SWEML_env2
+name: SWEML_env3
 channels:
   - defaults
   - conda-forge
@@ -251,7 +251,7 @@ dependencies:
       - netcdf4==1.6.5
       - networkx==3.2.1
       - numexpr==2.9.0
-      - numpy==1.22.4
+      - numpy
       - oauthlib==3.2.2
       - opt-einsum
       - pandas==1.4.3
@@ -291,7 +291,7 @@ dependencies:
       - s3transfer
       - scikit-image==0.22.0
       - scikit-learn==1.1.1
-      - scipy==1.9.0
+      - scipy
       - seaborn==0.11.2
       - setuptools-scm==8.0.4
       - shapely==2.0.3
@@ -320,4 +320,4 @@ dependencies:
       - xarray==2022.6.0
       - xyzservices==2023.10.1
       - zict==3.0.0
-prefix: /home/rjohnson18/envs/SWEML_env
+prefix: /home/rjohnson18/envs/SWEML_env3
