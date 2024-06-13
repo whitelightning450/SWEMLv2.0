@@ -1,0 +1,2 @@
+Requirement already satisfied: scipy in /home/rjohnson18/envs/SWEML_env2/lib/python3.9/site-packages (1.9.0)
+Requirement already satisfied: numpy<1.25.0,>=1.18.5 in /home/rjohnson18/envs/SWEML_env2/lib/python3.9/site-packages (from scipy) (1.22.4)

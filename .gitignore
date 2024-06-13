@@ -16,3 +16,6 @@ Model/.ipynb_checkpoints/
 *.zip
 *.ipynb_checkpoints/
 *.nfs*
+*.nc
+*.zarr
+*.geotiff
