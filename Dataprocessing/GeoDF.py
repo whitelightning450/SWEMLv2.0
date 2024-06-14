@@ -27,7 +27,7 @@ from osgeo import gdalconst
 import earthaccess as ea
 import pickle
 import pystac_client
-import richdem as rd
+#import richdem as rd
 import planetary_computer
 from planetary_computer import sign
 
