@@ -23,8 +23,8 @@ from tqdm._tqdm_notebook import tqdm_notebook
 import time
 import requests
 import concurrent.futures as cf
-import s3fs
-import get_InSitu_obs
+# import s3fs
+# import get_InSitu_obs
 import pickle as pkl
 import warnings; warnings.filterwarnings("ignore")
 
@@ -64,6 +64,10 @@ def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_d
         selected_snotel_data.dropna(subset =['station_id'], inplace = True)
         # # Transpose and set the index correctly
         transposed_data[cell_id] = selected_snotel_data.set_index('station_id').T
+
+        transposed_data[cell_id].rename(columns = {'dates': 'Date'})
+
+        
     except:
         print(f"{cell_id} throwing error, moving on...")
         
@@ -83,19 +87,28 @@ def process_single_timestamp(args):
 
     transposed_data = {}
 
+    #print(new_column_names)
+
     if timestamp in new_column_names.values():
         print(f"Site processing complete, adding observtional data to {timestamp} df...")
         tqdm_notebook.pandas()
         aso_swe_data.progress_apply(lambda row: cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data), axis =1)
-
+        #print(transposed_data)
         #Convert dictionary of sites to dataframe
         transposed_df = pd.concat(transposed_data, axis=0) 
+
+        display(transposed_df)
+        transposed_df.reset_index(inplace = True)
+        transposed_df.rename(columns={'index': 'cell_id','station_id':"Date"}, inplace=True)
+        transposed_df.rename(columns={'level_0': 'cell_id','dates':"Date"}, inplace=True)
+        display(transposed_df)
      
 
         # Reset index and rename columns
-        transposed_df.reset_index(inplace = True)
-        transposed_df.rename(columns={'level_0': 'cell_id', 'level_1': 'Date'}, inplace = True)
+        #transposed_df.rename(columns={'level_0': 'cell_id', 'level_1': 'Date'}, inplace = True)
+       # transposed_df.rename(columns={'index': 'cell_id'}, inplace = True)
         transposed_df['Date'] = pd.to_datetime(transposed_df['Date'])
+        
 
         aso_swe_data['Date'] = pd.to_datetime(timestamp)
         aso_swe_data = aso_swe_data[['cell_id', 'Date', 'swe_m']]
@@ -143,6 +156,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
         snotel_data = pd.read_parquet(Snotelobs_path)
         snotel_data = snotel_data.T
         snotel_data.reset_index(inplace=True)
+        snotel_data.rename(columns={'index':'station_id'}, inplace = True)
     except:
         print("Go run the get_InSitu_obs script above...")
         breakpoint
@@ -161,7 +175,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     print('Processing datetime component of SNOTEL observation dataframe')
     date_columns = snotel_data.columns[1:]
     new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
-    #snotel_data_f = snotel_data.rename(columns=new_column_names)
+    snotel_data = snotel_data.rename(columns=new_column_names)
     
     #create dataframe
     if manual == False:
@@ -208,10 +222,16 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     aso_swe_files.sort()
     Obsdf = pd.DataFrame()
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
-    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
-        # Start the load operations and mark each future with its process function
-        [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data, nearest_snotel, Obsdf, obsdf_path,output_res)) for i in tqdm(range(len(aso_swe_files)))]
-        
+    # with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+    #     # Start the load operations and mark each future with its process function
+    #     [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data, nearest_snotel, Obsdf, obsdf_path,output_res)) for i in tqdm(range(len(aso_swe_files)))]
+
+    for i in tqdm_notebook(range(len(aso_swe_files))):
+        args = aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data, nearest_snotel, Obsdf, obsdf_path,output_res
+        process_single_timestamp(args)
+                           
+
+
     print(f"Job complete for connecting SNOTEL obs to sites/dates")
 
 
