@@ -28,7 +28,7 @@ import earthaccess as ea
 # import h5py
 import pickle
 from pystac_client import Client
-import richdem as rd
+#import richdem as rd
 import planetary_computer
 from planetary_computer import sign
 
@@ -42,8 +42,7 @@ import glob
 from pprint import pprint
 from typing import Union
 from pathlib import Path
-from tqdm import tqdm
-import time
+from tqdm._tqdm_notebook import tqdm_notebook
 import requests
 # import dask
 # import dask.dataframe as dd
@@ -144,7 +143,7 @@ class ASODataTool:
         credentials = self.get_credentials()
 
         with cf.ThreadPoolExecutor(max_workers=5) as executor: #setting max workers to none leads to 503 error, NASA does not like us pinging a lot
-            {executor.submit(NSIDC_Data.cmr_download, (self.url_list[i]),credentials, dpath,region, False):i for i in tqdm(range(len(self.url_list)))}
+            {executor.submit(NSIDC_Data.cmr_download, (self.url_list[i]),credentials, dpath,region, False):i for i in tqdm_notebook(range(len(self.url_list)))}
 
         print(f"All NASA ASO data collected for given date range and can be found in {dpath}...")
         print("Files with .xml extension moved to the destination folder.")
@@ -369,11 +368,11 @@ class ASODataProcessing:
         # Create parquet files from TIFF files
         with cf.ProcessPoolExecutor(max_workers=None) as executor: 
         # Start the load operations and mark each future with its process function
-            [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, region, dir)) for i in tqdm(range(len(tiff_files)))]
+            [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, region, dir)) for i in tqdm_notebook(range(len(tiff_files)))]
 
         print('Checking to make sure all files successfully converted...')
         parquet_folder = os.path.join(dir, f"{region}/{output_res}M_SWE_parquet")
-        for parquet_file in tqdm(os.listdir(parquet_folder)):
+        for parquet_file in tqdm_notebook(os.listdir(parquet_folder)):
             try:
                 aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
             except:# add x number of attempts
