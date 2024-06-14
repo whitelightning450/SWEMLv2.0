@@ -48,8 +48,6 @@ In the command line type:
 
     conda activate SWEML_310
 
-    mamba install -c conda-forge boto3
-
     python -m ipykernel install --user --name=SWEML_310
 
 
