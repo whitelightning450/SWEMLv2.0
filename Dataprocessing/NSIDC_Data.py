@@ -202,11 +202,11 @@ def cmr_download(url,credentials, folder, region, quiet=False): #This could be m
                 if not quiet:
                     count = count + 1
                     time_elapsed = time.time() - time_initial
-                    download_speed = get_speed(time_elapsed, count * chunk_size)
-                    output_progress(count, math.ceil(length / chunk_size), status=download_speed)
+                    # download_speed = get_speed(time_elapsed, count * chunk_size)
+                    # output_progress(count, math.ceil(length / chunk_size), status=download_speed)
 
-        if not quiet:
-            print()
+        # if not quiet:
+        #     print()
     except HTTPError as e:
         print('HTTP error {0}, {1}'.format(e.code, e.reason))
     except URLError as e:
@@ -311,14 +311,14 @@ def cmr_search(short_name, version, time_start, time_end,
         url_scroll_results = cmr_filter_urls(search_page)
         if not url_scroll_results:
             break
-        if not quiet and hits > CMR_PAGE_SIZE:
-            print('.', end='')
-            sys.stdout.flush()
+        #if not quiet and hits > CMR_PAGE_SIZE:
+            # print('.', end='')  #These print infomration to terminal
+            # sys.stdout.flush()
         urls += url_scroll_results
-        print(urls)
+        #print(urls)
 
-    if not quiet and hits > CMR_PAGE_SIZE:
-        print()
+    # if not quiet and hits > CMR_PAGE_SIZE:
+    #     print()
     return urls
 
 def main(argv=None):
