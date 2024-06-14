@@ -142,12 +142,13 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     try:
         snotel_data = pd.read_parquet(Snotelobs_path)
     except:
-        print("Snotel obs not found, retreiving from AWS S3")
-        if not os.path.exists(snotel_path):
-            os.makedirs(snotel_path, exist_ok=True)
-        key = "NSMv2.0"+Snotelobs_path.split("SWEMLv2.0",1)[1]        
-        S3.meta.client.download_file(BUCKET_NAME, key,Snotelobs_path)
-        snotel_data = pd.read_parquet(Snotelobs_path)
+        print("Go run the get_InSitu_obs script above...")
+        breakpoint
+        # if not os.path.exists(snotel_path):
+        #     os.makedirs(snotel_path, exist_ok=True)
+        # key = "NSMv2.0"+Snotelobs_path.split("SWEMLv2.0",1)[1]        
+        # S3.meta.client.download_file(BUCKET_NAME, key,Snotelobs_path)
+        # snotel_data = pd.read_parquet(Snotelobs_path)
 
     #Load dictionary of nearest sites
     print(f"Loading {output_res}M resolution grids for {region} region")
@@ -156,7 +157,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
 
     #Processing SNOTEL Obs to correct date/time
     print('Processing datetime component of SNOTEL observation dataframe')
-    date_columns = snotel_data.columns[1:]
+    date_columns = snotel_data.index
     new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
     #snotel_data_f = snotel_data.rename(columns=new_column_names)
     
@@ -194,10 +195,10 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
 
     print(f"Getting CDEC and SNOTEL observations for the following dates: {dates}")
     #Getdata for missing dates
-    snotel_data = get_InSitu_obs.Get_Monitoring_Data_Threaded(dates)
+    #snotel_data = get_InSitu_obs.Get_Monitoring_Data_Threaded(dates)
 
-    date_columns = snotel_data.columns[1:]
-    new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
+    # date_columns = snotel_data.columns[1:]
+    # new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
     snotel_data_f = snotel_data.rename(columns=new_column_names)
     snotel_data_f.reset_index(inplace=True)
 
