@@ -76,7 +76,7 @@ earthaccess.login(persist=True)
 
 #load access key
 HOME = os.path.expanduser('~')
-KEYPATH = "SWEML/AWSaccessKeys.csv"
+KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
 ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
 
 #start session
