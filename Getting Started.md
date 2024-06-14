@@ -53,10 +53,6 @@ In the command line type:
     python -m ipykernel install --user --name=SWEML_310
 
 
-
-
- boto3 after
-
 ### Connect to AWS
 All of the data for the project is on a publicly accessible AWS S3 bucket (national-snow-model), however, some methods require credentials. 
 Please request credentials as an issue and put the credentials in the head of the repo (e.g., SWEMLv2.0) as AWSaccessKeys.csv.
