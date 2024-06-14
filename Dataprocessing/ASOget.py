@@ -377,10 +377,10 @@ class ASODataProcessing:
                 aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
             except:# add x number of attempts
                 print(f"Bad file conversion for {parquet_file}, attempting to reprocess")
-                tiff_file = f"ASO_{output_res}M_{parquet_file[-16:-8]}.tif"
+                tiff_file = f"ASO_50M_SWE_USCACE_{parquet_file[-16:-8]}.tif"
                 print(tiff_file)
                 # redo function to convert tiff to parquet
-                args = folder, tiff_file, output_res, region, dir
+                args = folder_path, tiff_file, output_res, region, dir
                 self.process_single_ASO_file(args)
                 try:
                     print('Attempt 2')
