@@ -23,7 +23,7 @@ from tqdm._tqdm_notebook import tqdm_notebook
 import time
 import requests
 import concurrent.futures as cf
-# import s3fs
+# import s3fs do not need this
 # import get_InSitu_obs
 import pickle as pkl
 import warnings; warnings.filterwarnings("ignore")
@@ -97,11 +97,11 @@ def process_single_timestamp(args):
         #Convert dictionary of sites to dataframe
         transposed_df = pd.concat(transposed_data, axis=0) 
 
-        display(transposed_df)
+        #display(transposed_df)
         transposed_df.reset_index(inplace = True)
         transposed_df.rename(columns={'index': 'cell_id','station_id':"Date"}, inplace=True)
         transposed_df.rename(columns={'level_0': 'cell_id','dates':"Date"}, inplace=True)
-        display(transposed_df)
+        #display(transposed_df)
      
 
         # Reset index and rename columns
