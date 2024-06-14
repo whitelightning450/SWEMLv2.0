@@ -44,9 +44,18 @@ Since we will be using Jupyter Notebooks for this exercise, we will use the Anac
 We suggest using Mamba rather than conda for installs, conda may be used but will take longer.
 In the command line type: 
 
-    mamba env create -f SWEML_env2.yaml 
+    mamba env create -f SWEML_310environment.yml 
 
-    python -m ipykernel install --user --name=SWEML_env2 
+    conda activate SWEML_310
+
+    mamba install -c conda-forge boto3
+
+    python -m ipykernel install --user --name=SWEML_310
+
+
+
+
+ boto3 after
 
 ### Connect to AWS
 All of the data for the project is on a publicly accessible AWS S3 bucket (national-snow-model), however, some methods require credentials. 
