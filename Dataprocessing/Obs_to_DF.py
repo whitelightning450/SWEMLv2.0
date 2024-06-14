@@ -52,13 +52,13 @@ BUCKET = S3.Bucket(BUCKET_NAME)
 
 
 #function for processing a single row -  test to see if this works
-def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data_f):
+def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data):
     try:
         cell_id = row['cell_id']
         station_ids = nearest_snotel[cell_id]
         station_mapping = {old_id: f"ns_{i+1}" for i, old_id in enumerate(station_ids)}
         cols = ['station_id', timestamp]
-        selected_snotel_data = snotel_data_f[cols]
+        selected_snotel_data = snotel_data[cols]
         # # Rename the station IDs in the selected SNOTEL data
         selected_snotel_data['station_id'] = selected_snotel_data['station_id'].map(station_mapping)
         selected_snotel_data.dropna(subset =['station_id'], inplace = True)
@@ -71,7 +71,7 @@ def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_d
 #function for processing a single timestamp
 def process_single_timestamp(args):
     #get key variable from args
-    aso_swe_files_folder_path, aso_swe_file, new_column_names, snotel_data_f, nearest_snotel , Obsdf, obsdf_path, output_res = args
+    aso_swe_files_folder_path, aso_swe_file, new_column_names, snotel_data, nearest_snotel , Obsdf, obsdf_path, output_res = args
         
     timestamp = aso_swe_file.split('_')[-1].split('.')[0]
 
@@ -86,7 +86,7 @@ def process_single_timestamp(args):
     if timestamp in new_column_names.values():
         print(f"Site processing complete, adding observtional data to {timestamp} df...")
         tqdm_notebook.pandas()
-        aso_swe_data.progress_apply(lambda row: cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data_f), axis =1)
+        aso_swe_data.progress_apply(lambda row: cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data), axis =1)
 
         #Convert dictionary of sites to dataframe
         transposed_df = pd.concat(transposed_data, axis=0) 
@@ -141,6 +141,8 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     print('Loading observations from 2013-2019')
     try:
         snotel_data = pd.read_parquet(Snotelobs_path)
+        snotel_data = snotel_data.T
+        snotel_data.reset_index(inplace=True)
     except:
         print("Go run the get_InSitu_obs script above...")
         breakpoint
@@ -157,7 +159,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
 
     #Processing SNOTEL Obs to correct date/time
     print('Processing datetime component of SNOTEL observation dataframe')
-    date_columns = snotel_data.index
+    date_columns = snotel_data.columns[1:]
     new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
     #snotel_data_f = snotel_data.rename(columns=new_column_names)
     
@@ -193,14 +195,14 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
         d= date[6:]
         dates.append(f"{Y}-{m}-{d}")
 
-    print(f"Getting CDEC and SNOTEL observations for the following dates: {dates}")
+    #print(f"Getting CDEC and SNOTEL observations for the following dates: {dates}")
     #Getdata for missing dates
     #snotel_data = get_InSitu_obs.Get_Monitoring_Data_Threaded(dates)
 
     # date_columns = snotel_data.columns[1:]
     # new_column_names = {col: pd.to_datetime(col, format='%Y-%m-%d').strftime('%Y%m%d') for col in date_columns}
-    snotel_data_f = snotel_data.rename(columns=new_column_names)
-    snotel_data_f.reset_index(inplace=True)
+    # snotel_data_f = snotel_data.rename(columns=new_column_names)
+    # snotel_data_f.reset_index(inplace=True)
 
     print(f"Connecting {len(aso_swe_files)} timesteps of observations for {region}")
     aso_swe_files.sort()
@@ -208,7 +210,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
     with cf.ProcessPoolExecutor(max_workers=None) as executor: 
         # Start the load operations and mark each future with its process function
-        [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data_f, nearest_snotel, Obsdf, obsdf_path,output_res)) for i in tqdm(range(len(aso_swe_files)))]
+        [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data, nearest_snotel, Obsdf, obsdf_path,output_res)) for i in tqdm(range(len(aso_swe_files)))]
         
     print(f"Job complete for connecting SNOTEL obs to sites/dates")
 
