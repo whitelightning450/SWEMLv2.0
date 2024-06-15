@@ -176,7 +176,7 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     #will need to make grid for RegionVal.pkl. 
     #build in method for adding to existing dictionary rather than rerunning for entire region...
     print('Loading all Geospatial prediction/observation files and concatenating into one dataframe')
-    for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
+    for aso_swe_file in tqdm_notebook(os.listdir(aso_swe_files_folder_path)):
         aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file))
         ASO_meta_loc_DF = pd.concat([ASO_meta_loc_DF, aso_file])
 
@@ -313,7 +313,7 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
     DEMs = []
 
     print("Retrieving Copernicus 90m DEM tiles")
-    for i in tqdm(range(0, len(tiles))):
+    for i in tqdm_notebook(range(0, len(tiles))):
         row = [i, tiles[i].id]
         DEMs.append(row)
     DEMs = pd.DataFrame(columns = ['sliceID', 'tileID'], data = DEMs)
@@ -327,10 +327,10 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
     results = []
     with cf.ThreadPoolExecutor(max_workers=None) as executor:
         jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles)): 
-                i for i in tqdm(range(len(metadata_df)))}
+                i for i in tqdm_notebook(range(len(metadata_df)))}
         
         print(f"Job complete for getting geospatial metadata, processing dataframe")
-        for job in tqdm(cf.as_completed(jobs)):
+        for job in tqdm_notebook(cf.as_completed(jobs)):
             results.append(job.result())
 
     meta = pd.DataFrame(results, columns=['cell_id', 'Elevation_m', 'Slope_Deg', 'Aspect_Deg'])
@@ -372,7 +372,7 @@ def add_geospatial_threaded(region, output_res):
     print(f"Concatenating {len(aso_swe_files)} with geospatial data...")
     with cf.ProcessPoolExecutor(max_workers=None) as executor: 
         # Start the load operations and mark each future with its process function
-        [executor.submit(add_geospatial_single, (f"{TrainingDFpath}/Obsdf", aso_swe_files[i], aso_gdf,GeoObsdfs)) for i in tqdm(range(len(aso_swe_files)))]
+        [executor.submit(add_geospatial_single, (f"{TrainingDFpath}/Obsdf", aso_swe_files[i], aso_gdf,GeoObsdfs)) for i in tqdm_notebook(range(len(aso_swe_files)))]
         
         print(f"Job complete for connecting obs with geospatial data, the files can be found in {GeoObsdfs}")
     
