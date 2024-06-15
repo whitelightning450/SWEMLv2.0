@@ -222,13 +222,13 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     aso_swe_files.sort()
     Obsdf = pd.DataFrame()
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
-    # with cf.ProcessPoolExecutor(max_workers=None) as executor: 
-    #     # Start the load operations and mark each future with its process function
-    #     [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data, nearest_snotel, Obsdf, obsdf_path,output_res)) for i in tqdm(range(len(aso_swe_files)))]
+    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+        # Start the load operations and mark each future with its process function
+        [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data, nearest_snotel, Obsdf, obsdf_path,output_res)) for i in tqdm(range(len(aso_swe_files)))]
 
-    for i in tqdm_notebook(range(len(aso_swe_files))):
-        args = aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data, nearest_snotel, Obsdf, obsdf_path,output_res
-        process_single_timestamp(args)
+    # for i in tqdm_notebook(range(len(aso_swe_files))):
+    #     args = aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data, nearest_snotel, Obsdf, obsdf_path,output_res
+    #     process_single_timestamp(args)
                            
 
 
