@@ -144,9 +144,9 @@ def calculate_distances_for_cell(aso_row, snotel_gdf, n=6):
         aso_row.geometry.y, aso_row.geometry.x,
         snotel_gdf.geometry.y.values, snotel_gdf.geometry.x.values)
     
-    nearest_sites = list(snotel_gdf['station_id'].iloc[distances.argsort()[:n]])
+    ns_s = list(snotel_gdf['station_id'].iloc[distances.argsort()[:n]])
     
-    return nearest_sites
+    return ns_s
 
 def create_polygon(row):
         return Polygon([(row['BL_Coord_Long'], row['BL_Coord_Lat']),
@@ -388,8 +388,8 @@ def add_geospatial_single(args):
     final_df = pd.merge(ObsDF, aso_gdf, on = 'cell_id', how = 'left')
     cols = [
         'cell_id', 'Date',  'cen_lat', 'cen_lon', 'Elevation_m', 'Slope_Deg',
-        'Aspect_Deg', 'swe_m', 'nearest_site_1', 'nearest_site_2', 'nearest_site_3', 'nearest_site_4', 
-        'nearest_site_5', 'nearest_site_6'
+        'Aspect_Deg', 'swe_m', 'ns_1', 'ns_2', 'ns_3', 'ns_4', 
+        'ns_5', 'ns_6'
         ]
     final_df = final_df[cols]
 
