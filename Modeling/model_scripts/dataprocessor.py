@@ -152,8 +152,6 @@ def mlp_scaler(regionlist, df, years, splitratio, test_years, target, input_colu
         y_train = pd.concat([y_train, y_train_reg])
         y_test = pd.concat([y_test, y_test_reg])
 
-
-
     #convert to numpy
     y_train_np = y_train.to_numpy()
     x_train_np = x_train.to_numpy()
@@ -187,33 +185,91 @@ def mlp_scaler(regionlist, df, years, splitratio, test_years, target, input_colu
 
     return x_train_scaled, y_scaled_train, x_test_scaled, x_test, y_test
 
-# def mlp_testscaler(df, years, splitratio, test_years, target, input_columns, model_path):
-#     #Get water year for testing from larger dataset
-#     x_test_temp = df[df.datetime.dt.year.isin(test_years)]
-#     x_test_temp_1 = x_test_temp.copy()
-#     station_index_list = x_test_temp_1['station_id']
-#     x_test_temp_1.pop('station_id')
-#     x_test_temp_1.pop('datetime')
-
-#     #Get target variable (y) and convert to numpy arrays
-#     y_test_temp_1 = x_test_temp_1[target]
-#     x_test_temp_1.pop(target)
-#     x_test_temp_1 = x_test_temp_1[input_columns]
-#     x_test_1_np = x_test_temp_1.reset_index(drop=True).to_numpy()
-#     #y_test_1_np = y_test_temp_1.reset_index(drop=True).to_numpy()
 
 
-#     #load scalers and scale
-#     scalerfilepath_x = f"{model_path}/scaler_x.save"
+#Data processor for MLP model
+def xgb_processor(regionlist, df, years, splitratio, test_years, target, input_columns, model_path, scalertype = 'MinMax'):
+    #check to make sure the model path exists
+    if not os.path.exists(model_path):
+        os.makedirs(model_path, exist_ok=True)
 
-#     #load scalers
-#     scaler_x = joblib.load(scalerfilepath_x)
-#     # scaler_y = joblib.load(scalerfilepath_y)
+    # #Select training data
+    # if years == True:
+    #     #training years
+    #     x_train = df[~df.datetime.dt.year.isin(test_years)]
+    #     x_train.pop('Date')
+    #     y_train = x_train[target]
+    #     x_train.pop(target)
+    #     x_train = x_train[input_columns]
 
-#     #scale the testing data
-#     x_test_1_scaled = scaler_x.fit_transform(x_test_1_np)
-#     #y_scaled_test_1 = scaler_y.fit_transform(y_test_1_np.reshape(-1, 1))
-#     #print(y_scaled_test_1.shape)
-#     print(x_test_1_scaled.shape)
+    #     #testing years
+    #     x_test = df[df.datetime.dt.year.isin(test_years)]
+    #     x_test.pop('Date')
+    #     y_test = x_test[target]
+    #     x_test.pop(target)
+    #     x_test = x_test[input_columns]
 
-#     return x_test_1_scaled, y_test_temp_1, x_test_temp, station_index_list
+    #     #Convert dataframe to numpy, scale, save scalers
+    #     y_train_np = y_train.to_numpy()
+    #     x_train_np = x_train.to_numpy()
+    #     x_test_np = x_test.to_numpy()
+        
+    # else:
+    #take random sample of each region to ensure they are in the testing data
+    x_train, y_train, x_test, y_test = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    for region in regionlist:
+        regionDF = df[df['region'] == region].copy()
+
+        display(regionDF.head(5))
+
+        X = regionDF[input_columns]
+        y = regionDF[target]
+
+        x_train_reg, x_test_reg, y_train_reg, y_test_reg = train_test_split(X, y, test_size=splitratio, random_state=69)
+
+        x_train = pd.concat([x_train, x_train_reg])
+        x_test = pd.concat([x_test, x_test_reg])
+        y_train = pd.concat([y_train, y_train_reg])
+        y_test = pd.concat([y_test, y_test_reg])
+
+    #convert to numpy
+    # y_train_np = y_train.to_numpy()
+    # x_train_np = x_train.to_numpy()
+    # x_test_np = x_test.to_numpy()
+
+    # scalerfilepath_x = f"{model_path}/scaler_x.save"
+    # scalerfilepath_y = f"{model_path}/scaler_y.save"
+
+    # if scalertype == 'MinMax':
+    #     scaler = MinMaxScaler() #potentially change scalling...StandardScaler
+    #     x_train_scaled = scaler.fit_transform(x_train_np)
+    #     x_test_scaled = scaler.fit_transform(x_test_np)
+    #     joblib.dump(scaler, scalerfilepath_x)
+
+    #     scaler = MinMaxScaler() #potentially change scalling...StandardScaler
+    #     y_scaled_train = scaler.fit_transform(y_train_np.reshape(-1, 1))
+    #     joblib.dump(scaler, scalerfilepath_y)  
+
+    # if scalertype == 'Standard':
+    #     scaler = StandardScaler() #potentially change scalling...StandardScaler
+    #     x_train_scaled = scaler.fit_transform(x_train_np)
+    #     joblib.dump(scaler, scalerfilepath_x)
+
+    #     scaler = StandardScaler() #potentially change scalling...StandardScaler
+    #     y_scaled_train = scaler.fit_transform(y_train.reshape(-1, 1))
+    #     joblib.dump(scaler, scalerfilepath_y) 
+
+    # print(f"y train shape {y_train_np.shape}")
+    # print(f"x train shape {x_train_np.shape}")
+    # print(f"x test shape {x_test_np.shape}")
+
+    # # Convert to tensor for PyTorch
+    # x_train_scaled_t = torch.Tensor(x_train_scaled)
+    # y_train_scaled_t = torch.Tensor(y_scaled_train)
+    # x_test_scaled_t = torch.Tensor(x_test_scaled)
+    # #Make sure the tensors on are the respective device (cpu/gpu)
+    # x_train_scaled_t = x_train_scaled_t.to(device)
+    # y_train_scaled_t = y_train_scaled_t.to(device)
+    # x_test_scaled_t = x_test_scaled_t.to(device)
+
+    return x_train, y_train, x_test, y_test
