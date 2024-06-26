@@ -26,6 +26,8 @@ def seasonal_site_rel(df):
         newcol = f"Seasonal_{col}_rel"
         weekcol = f"{col}_week_mean"
         df[newcol] = df[col]/df[weekcol]
+    #late season values cause division by 0 error. so far, all obs are 0/0, setting to 1
+    df.fillna(1, inplace = True)
     return df
 
 def add_Seasonality(region, output_res, threshold):
