@@ -132,11 +132,6 @@ def mlp_predict(layers, model_path, modelname, x_test, x_test_scaled_t, y_test, 
 
     PredDF = x_test.copy()
 
-
-    # l = len(y_test)
-    # y_test = torch.Tensor(y_test.reshape(l,1))
-    # y_test = y_test.to(DEVICE)
-
     # Evaluation
     model.eval()
     with torch.no_grad():
