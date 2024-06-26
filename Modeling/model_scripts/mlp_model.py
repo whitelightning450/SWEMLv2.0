@@ -112,7 +112,7 @@ def mlp_train(x_train_scaled_t,y_train_scaled_t, layers, params, loss_func, mode
             optimizer.step()
             total_loss += loss.item()
 
-        #print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_loader)}")
+        print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(train_loader)}")
 
     #save model
     if os.path.exists(model_path) == False:

@@ -178,7 +178,7 @@ def Make_Precip_DF(region, output_res, threshold):
     DFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
 
     #make precip df path
-    PrecipDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs_{threshold}_fSCA_Thresh"
+    PrecipDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
     if not os.path.exists(PrecipDFpath):
         os.makedirs(PrecipDFpath, exist_ok=True)
 
