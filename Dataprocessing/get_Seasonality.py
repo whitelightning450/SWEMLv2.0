@@ -2,8 +2,8 @@ import datetime
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
-from tqdm import tqdm
-from tqdm.notebook import tqdm_notebook
+from tqdm import tqdm, tqdm_notebook
+import concurrent.futures as cf
 import os
 import warnings
 import pickle as pkl
@@ -30,30 +30,54 @@ def seasonal_site_rel(df):
 
 def add_Seasonality(region, output_res, threshold):
     #load dataframe
-    DFpath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs_{threshold}_fSCA_Thresh'
-    Savepath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Seasonality_PrecipVIIRSGeoObsDFs_{threshold}_fSCA_Thresh'
+    DFpath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
+    Savepath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Seasonality_PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
     if not os.path.exists(Savepath):
         os.makedirs(Savepath, exist_ok=True)
 
     files = [filename for filename in os.listdir(DFpath)]
     print(f"Adding Day of Season, seasonal nearest monitoring site averages, and seasonal nearest monitoring site relationship to averages to all {region} dataframes...")
-    for file in tqdm_notebook(files):
-        df = pd.read_parquet(os.path.join(DFpath, file))
-        #add day of season info
-        df['DOS'] = df.apply(lambda df: DOS(df['Date']), axis=1)
+    
+    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+        # Start the load operations and mark each future with its process function
+        [executor.submit(single_file_seasonality, (file, DFpath, region, output_res, Savepath)) for file in tqdm_notebook(files)]
+    # for file in tqdm_notebook(files):
+    #     df = pd.read_parquet(os.path.join(DFpath, file))
+    #     #add day of season info
+    #     df['DOS'] = df.apply(lambda df: DOS(df['Date']), axis=1)
 
-        #add the in situ metrics here
-        df = add_nearest_snotel_ave(df, region, output_res)
+    #     #add the in situ metrics here
+    #     df = add_nearest_snotel_ave(df, region, output_res)
 
-        #add seasonal relationship for nearest sites to current obs
-        df = seasonal_site_rel(df)
+    #     #add seasonal relationship for nearest sites to current obs
+    #     df = seasonal_site_rel(df)
 
-        coldrop = ['week_id','year','Oct1st_weekid','EOY_weekid']
-        df.drop(columns = coldrop, inplace =  True)
-        #save dataframe
-        table = pa.Table.from_pandas(df)
-        # Parquet with Brotli compression
-        pq.write_table(table, f"{Savepath}/Season_{file}", compression='BROTLI')
+    #     coldrop = ['week_id','year','Oct1st_weekid','EOY_weekid']
+    #     df.drop(columns = coldrop, inplace =  True)
+    #     #save dataframe
+    #     table = pa.Table.from_pandas(df)
+    #     # Parquet with Brotli compression
+    #     pq.write_table(table, f"{Savepath}/Season_{file}", compression='BROTLI')
+    
+    
+def single_file_seasonality(arg):
+    file, DFpath, region, output_res, Savepath = arg
+    df = pd.read_parquet(os.path.join(DFpath, file))
+    #add day of season info
+    df['DOS'] = df.apply(lambda df: DOS(df['Date']), axis=1)
+
+    #add the in situ metrics here
+    df = add_nearest_snotel_ave(df, region, output_res)
+
+    #add seasonal relationship for nearest sites to current obs
+    df = seasonal_site_rel(df)
+
+    coldrop = ['week_id','year','Oct1st_weekid','EOY_weekid']
+    df.drop(columns = coldrop, inplace =  True)
+    #save dataframe
+    table = pa.Table.from_pandas(df)
+    # Parquet with Brotli compression
+    pq.write_table(table, f"{Savepath}/Season_{file}", compression='BROTLI')
 
 def match_nearest_snotel(cell_id, WY_Week, n_snotel, ss_df):
     nearest_sites = n_snotel[str(cell_id)]
