@@ -167,7 +167,7 @@ def mlp_scaler(regionlist, df, years, splitratio, test_years, target, input_colu
         joblib.dump(scaler, scalerfilepath_x)
 
         scaler = MinMaxScaler() #potentially change scalling...StandardScaler
-        y_scaled_train = scaler.fit_transform(y_train_np.reshape(-1, 1))
+        y_train_scaled = scaler.fit_transform(y_train_np.reshape(-1, 1))
         joblib.dump(scaler, scalerfilepath_y)  
 
     if scalertype == 'Standard':
@@ -176,14 +176,23 @@ def mlp_scaler(regionlist, df, years, splitratio, test_years, target, input_colu
         joblib.dump(scaler, scalerfilepath_x)
 
         scaler = StandardScaler() #potentially change scalling...StandardScaler
-        y_scaled_train = scaler.fit_transform(y_train.reshape(-1, 1))
+        y_train_scaled = scaler.fit_transform(y_train.reshape(-1, 1))
         joblib.dump(scaler, scalerfilepath_y) 
 
-    print(f"y train shape {y_scaled_train.shape}")
+    print(f"y train shape {y_train_scaled.shape}")
     print(f"x train shape {x_train_scaled.shape}")
     print(f"x test shape {x_test_scaled.shape}")
 
-    return x_train_scaled, y_scaled_train, x_test_scaled, x_test, y_test
+    # Convert to tensor for PyTorch
+    x_train_scaled_t = torch.Tensor(x_train_scaled)
+    y_train_scaled_t = torch.Tensor(y_train_scaled)
+    x_test_scaled_t = torch.Tensor(x_test_scaled)
+    #Make sure the tensors on are the respective device (cpu/gpu)
+    x_train_scaled_t = x_train_scaled_t.to(device)
+    y_train_scaled_t = y_train_scaled_t.to(device)
+    x_test_scaled_t = x_test_scaled_t.to(device)
+
+    return x_train_scaled_t, y_train_scaled_t, x_test_scaled_t, x_test, y_test
 
 
 
@@ -258,18 +267,5 @@ def xgb_processor(regionlist, df, years, splitratio, test_years, target, input_c
     #     scaler = StandardScaler() #potentially change scalling...StandardScaler
     #     y_scaled_train = scaler.fit_transform(y_train.reshape(-1, 1))
     #     joblib.dump(scaler, scalerfilepath_y) 
-
-    # print(f"y train shape {y_train_np.shape}")
-    # print(f"x train shape {x_train_np.shape}")
-    # print(f"x test shape {x_test_np.shape}")
-
-    # # Convert to tensor for PyTorch
-    # x_train_scaled_t = torch.Tensor(x_train_scaled)
-    # y_train_scaled_t = torch.Tensor(y_scaled_train)
-    # x_test_scaled_t = torch.Tensor(x_test_scaled)
-    # #Make sure the tensors on are the respective device (cpu/gpu)
-    # x_train_scaled_t = x_train_scaled_t.to(device)
-    # y_train_scaled_t = y_train_scaled_t.to(device)
-    # x_test_scaled_t = x_test_scaled_t.to(device)
 
     return x_train, y_train, x_test, y_test
