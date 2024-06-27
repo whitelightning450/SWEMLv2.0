@@ -21,7 +21,7 @@ Go to home directory
 ```
 cd ~
 ```
-Create a envs directory
+Create an envs directory
 ```
 mkdir envs
 ```
