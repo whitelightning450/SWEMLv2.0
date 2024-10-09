@@ -319,4 +319,4 @@ dependencies:
       - xarray==2022.6.0
       - xyzservices==2023.10.1
       - zict==3.0.0
-prefix: /home/rjohnson18/envs/SWEML_env2
+
