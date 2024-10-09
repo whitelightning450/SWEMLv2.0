@@ -69,7 +69,7 @@ import base64
 import getpass
 
 '''
-To create .netrc file:
+To create .netrc file:  https://earthaccess.readthedocs.io/en/latest/howto/authenticate/
 import earthaccess
 earthaccess.login(persist=True)
 '''

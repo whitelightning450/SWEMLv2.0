@@ -227,26 +227,26 @@ def GeoSpatial(region, output_res):
 def process_single_location(args):
     cell_id, lat, lon, DEMs, tiles = args
     
-    #maybe thorugh a try/except here, look up how to find copernicus data
-    try:
-        tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
-        index_id = DEMs.loc[tile_id]['sliceID']
+    #maybe thorugh a try/except here, look up how to find copernicus data --Problem is this! and finding the nearest location below
+    #try:
+    tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
+    index_id = DEMs.loc[tile_id]['sliceID']
 
-        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
-    except:
-        tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.floor(abs(lon)))}_00_DEM"
-        index_id = DEMs.loc[tile_id]['sliceID']
-        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+    signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+# except:
+    #     tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.floor(abs(lon)))}_00_DEM"
+    #     index_id = DEMs.loc[tile_id]['sliceID']
+    #     signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
 
-    else:
-        tile_id = f"Copernicus_DSM_COG_30_N{str(math.ceil(lat))}_00_W{str(math.floor(abs(lon)))}_00_DEM"
-        index_id = DEMs.loc[tile_id]['sliceID']
-        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+    # else:
+    #     tile_id = f"Copernicus_DSM_COG_30_N{str(math.ceil(lat))}_00_W{str(math.floor(abs(lon)))}_00_DEM"
+    #     index_id = DEMs.loc[tile_id]['sliceID']
+    #     signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
 
-    finally:
-        tile_id = f"Copernicus_DSM_COG_30_N{str(math.ceil(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
-        index_id = DEMs.loc[tile_id]['sliceID']
-        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+    # finally:
+    #     tile_id = f"Copernicus_DSM_COG_30_N{str(math.ceil(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
+    #     index_id = DEMs.loc[tile_id]['sliceID']
+    #     signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
 
 
     #signed_asset = planetary_computer.sign(tiles)
@@ -290,7 +290,7 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
     bounding_box = metadata_df.geometry.total_bounds
     #get the max and mins to make sure we get all geos
     min_x, min_y, max_x, max_y = math.floor(bounding_box[0])-1, math.floor(bounding_box[1])-1, math.ceil(bounding_box[2])+1, math.ceil(bounding_box[3])+1
-    
+    print(min_x, min_y, max_x, max_y)
     client = pystac_client.Client.open(
             "https://planetarycomputer.microsoft.com/api/stac/v1",
             ignore_conformance=True,
@@ -321,17 +321,25 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
     del DEMs['tileID']
     print(f"There are {len(DEMs)} tiles in the region")
 
+
     print("Determining Grid Cell Spatial Features")
 
     
     results = []
-    with cf.ThreadPoolExecutor(max_workers=None) as executor:
-        jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles)): 
-                i for i in tqdm_notebook(range(len(metadata_df)))}
+    # with cf.ThreadPoolExecutor(max_workers=None) as executor:
+    #     jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles)): 
+    #             i for i in tqdm_notebook(range(len(metadata_df)))}
         
-        print(f"Job complete for getting geospatial metadata, processing dataframe")
-        for job in tqdm_notebook(cf.as_completed(jobs)):
-            results.append(job.result())
+    #     print(f"Job complete for getting geospatial metadata, processing dataframe")
+    #     for job in tqdm_notebook(cf.as_completed(jobs)):
+    #         results.append(job.result())
+   
+    for i in tqdm_notebook(range(len(metadata_df))):
+        cell_id, elev, slop, asp = process_single_location((metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles))
+        site = [cell_id, elev, slop, asp]
+        results.append(site)
+
+            
 
     meta = pd.DataFrame(results, columns=['cell_id', 'Elevation_m', 'Slope_Deg', 'Aspect_Deg'])
     meta.set_index('cell_id', inplace=True)
@@ -341,7 +349,7 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
     #save regional dataframe
     dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
     print(f"Saving {region} dataframe in {dfpath}")
-    #metadata_df.to_csv(f"{dfpath}/{region}_metadata.parquet")
+    
     # Save the DataFrame as a parquet file
     #Convert DataFrame to Apache Arrow Table, drop the geometry column to play nice with parquet files
     metadata_df.pop('geometry')
@@ -349,7 +357,7 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
     # Parquet with Brotli compression
     pq.write_table(table, f"{dfpath}/{region}_metadata.parquet", compression='BROTLI')
         
-    return metadata_df
+    return metadata_df, DEMs, tiles
 
 
 def add_geospatial_threaded(region, output_res):
