@@ -51,6 +51,10 @@ In the command line type:
     python -m ipykernel install --user --name=SWEML_310
 
 
+### Setting up PyTorch Modeling package
+You will need to set up an individualized PyTorch modeling package for you machine.
+Please visit https://pytorch.org/get-started/locally/ and work through the steps to install.
+
 ### Connect to AWS
 All of the data for the project is on a publicly accessible AWS S3 bucket (national-snow-model), however, some methods require credentials. 
 Please request credentials as an issue and put the credentials in the head of the repo (e.g., SWEMLv2.0) as AWSaccessKeys.csv.

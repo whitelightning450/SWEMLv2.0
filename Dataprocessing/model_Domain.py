@@ -4,6 +4,7 @@ import os
 #connecting to AWS
 import warnings; warnings.filterwarnings("ignore")
 import boto3
+from itertools import product
 from botocore import UNSIGNED
 from botocore.client import Config
 
@@ -82,4 +83,31 @@ def modeldomain():
 
     regionlist = list(SWEMLv2regions.keys())
 
+    print("Checking for required files")
+    #key files
+    awspaths = ['SNOTEL']
+    paths = ["data/SNOTEL_Data"]
+    files = ["ground_measures_metadata.parquet"]
+
+    for awspaths, paths, files, in product(awspaths, paths, files):
+        filecheck(awspaths,paths,files)
+
+
+
     return regionlist
+
+
+
+#check to see if key files are in the data folders, if not, get them from AWS S3
+def filecheck(awspaths,path,file):
+
+    #Snotel metafile
+    dpath = f"{HOME}/SWEMLv2.0/{path}"
+    if os.path.isfile(f"{dpath}/{file}") == True:
+        print(f"{file} is local")
+    else:
+        print(f"{file} not local, getting from AWS S3.")
+        if not os.path.exists(dpath):
+            os.makedirs(dpath, exist_ok=True)
+        key = f"{awspaths}/{file}"            
+        S3.meta.client.download_file(BUCKET_NAME, key,f"{dpath}/{file}")
