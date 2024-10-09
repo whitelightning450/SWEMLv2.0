@@ -155,10 +155,11 @@ def WY_week(df, week_id):
 def seasonal_snotel():
 
     DFpath = f'{HOME}/SWEMLv2.0/data/SNOTEL_Data'
-    snotel = pd.read_parquet(f"{DFpath}/ground_measures.parquet")
-    snotel = snotel.T
+    snotel = pd.read_parquet(f"{DFpath}/ground_measures_dp.parquet")
+    #snotel = snotel.T
     snotel.reset_index(inplace = True)
-    snotel.rename(columns = {'index':'date'}, inplace = True)
+    snotel.rename(columns = {'dates':'date'}, inplace = True)
+    #snotel.rename(columns = {'index':'date'}, inplace = True)
     snotel['date'] = pd.to_datetime(snotel['date'])
     snotel['week_id'] = snotel['date'].dt.strftime("%V").astype(int)
     snotel['year'] = snotel['date'].dt.year
