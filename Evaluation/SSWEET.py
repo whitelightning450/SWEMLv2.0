@@ -37,6 +37,9 @@ from botocore.client import Config
 import os
 import json
 import warnings; warnings.filterwarnings("ignore")
+import matplotlib.pyplot as plt
+import contextily as cx
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 #A function to load model predictions
 def load_Predictions(Region_list):
@@ -60,17 +63,20 @@ def load_Predictions(Region_list):
 
 
 #Function to convert predictions into parity plot plus evaluation metrics
-def parityplot(EvalDF):   
+def parityplot(EvalDF, savfig, figname):   
     
     #Plot the results in a parity plot
     sns.set(style='ticks')
     SWEmax = max(EvalDF['y_test'])
 
-    sns.relplot(data=EvalDF, x='y_test', y='y_pred', aspect=1.61)
+    sns.relplot(data=EvalDF, x='y_test', y='y_pred', hue = 'Elevation_m', aspect=1.61)
     plt.plot([0,SWEmax], [0,SWEmax], color = 'red', linestyle = '--')
     plt.xlabel('Observed SWE (cm)')
     plt.ylabel('Predicted SWE (cm)')
     plt.show()
+
+    if savfig==True:
+        plt.savefig(f"./Figures/{figname}.png", dpi =600, bbox_inches='tight')
 
     #Run model evaluate functions
     #Regional
@@ -155,6 +161,38 @@ def Model_Vs(EvalDF,metric,model_output):
     plt.ylabel(ylabel)
     plt.title(f"{model_output} by {xlabel}", fontsize = 20)
     plt.show()
+
+
+
+def SpatialAnalysis(EvalDF, cmap, var, Title, savfig, variant, figname):
+    #Convert to a geopandas DF
+    Pred_Geo = gpd.GeoDataFrame(EvalDF, geometry = gpd.points_from_xy(EvalDF.cen_lon, EvalDF.cen_lat), crs=4326)
+
+    #get error value
+    Pred_Geo['y_error'] = Pred_Geo['y_test'] - Pred_Geo['y_pred']
+
+    Pred_Geo = Pred_Geo.to_crs(epsg=3857)
+
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    plt.set_cmap(cmap) 
+
+    Pred_Geo.plot(column=var,
+                  ax = ax,
+                  legend=True,
+                  markersize=3,
+                  legend_kwds={"label": "SWE (cm)", "orientation": "vertical"}
+                )
+    ax.set_xlim(-1.335e7, -1.325e7)
+    ax.set_ylim(4.515e6, 4.58e6)
+    cx.add_basemap(ax, source="https://server.arcgisonline.com/ArcGIS/rest/services/"+variant+"/MapServer/tile/{z}/{y}/{x}")   #cx.providers.OpenStreetMap.Mapnik)
+    ax.set_axis_off()
+    # ax.text(-1.345e7, 4.64e6, f"SWE estimate: {date}", fontsize =14)
+
+    plt.title(Title)
+
+    if savfig == True:
+        plt.savefig(f"./Figures/{figname}.png", dpi =600, bbox_inches='tight')
     
     
     
