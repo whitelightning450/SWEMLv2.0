@@ -228,57 +228,44 @@ def process_single_location(args):
     cell_id, lat, lon, DEMs, tiles = args
     
     #maybe thorugh a try/except here, look up how to find copernicus data --Problem is this! and finding the nearest location below
-    #try:
-    tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
-    index_id = DEMs.loc[tile_id]['sliceID']
+    try:
+        tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
+        index_id = DEMs.loc[tile_id]['sliceID']
 
-    signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
-# except:
-    #     tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.floor(abs(lon)))}_00_DEM"
-    #     index_id = DEMs.loc[tile_id]['sliceID']
-    #     signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
 
-    # else:
-    #     tile_id = f"Copernicus_DSM_COG_30_N{str(math.ceil(lat))}_00_W{str(math.floor(abs(lon)))}_00_DEM"
-    #     index_id = DEMs.loc[tile_id]['sliceID']
-    #     signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+        elevation = rxr.open_rasterio(signed_asset.href)
+        
+        slope = elevation.copy()
+        aspect = elevation.copy()
 
-    # finally:
-    #     tile_id = f"Copernicus_DSM_COG_30_N{str(math.ceil(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
-    #     index_id = DEMs.loc[tile_id]['sliceID']
-    #     signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+        transformer = Transformer.from_crs("EPSG:4326", elevation.rio.crs, always_xy=True)
+        xx, yy = transformer.transform(lon, lat)
 
+        tilearray = np.around(elevation.values[0]).astype(int)
+        geo = (math.floor(float(lon)), 90, 0.0, math.ceil(float(lat)), 0.0, -90)
 
-    #signed_asset = planetary_computer.sign(tiles)
-    elevation = rxr.open_rasterio(signed_asset.href)
-    
-    slope = elevation.copy()
-    aspect = elevation.copy()
+        driver = gdal.GetDriverByName('MEM')
+        temp_ds = driver.Create('', tilearray.shape[1], tilearray.shape[0], 1, gdalconst.GDT_Float32)
 
-    transformer = Transformer.from_crs("EPSG:4326", elevation.rio.crs, always_xy=True)
-    xx, yy = transformer.transform(lon, lat)
+        temp_ds.GetRasterBand(1).WriteArray(tilearray)
 
-    tilearray = np.around(elevation.values[0]).astype(int)
-    geo = (math.floor(float(lon)), 90, 0.0, math.ceil(float(lat)), 0.0, -90)
+        tilearray_np = temp_ds.GetRasterBand(1).ReadAsArray()
+        grad_y, grad_x = gradient(tilearray_np)
 
-    driver = gdal.GetDriverByName('MEM')
-    temp_ds = driver.Create('', tilearray.shape[1], tilearray.shape[0], 1, gdalconst.GDT_Float32)
+        # Calculate slope and aspect
+        slope_arr = np.sqrt(grad_x**2 + grad_y**2)
+        aspect_arr = rad2deg(arctan2(-grad_y, grad_x)) % 360 
+        
+        slope.values[0] = slope_arr
+        aspect.values[0] = aspect_arr
 
-    temp_ds.GetRasterBand(1).WriteArray(tilearray)
-
-    tilearray_np = temp_ds.GetRasterBand(1).ReadAsArray()
-    grad_y, grad_x = gradient(tilearray_np)
-
-    # Calculate slope and aspect
-    slope_arr = np.sqrt(grad_x**2 + grad_y**2)
-    aspect_arr = rad2deg(arctan2(-grad_y, grad_x)) % 360 
-    
-    slope.values[0] = slope_arr
-    aspect.values[0] = aspect_arr
-
-    elev = round(elevation.sel(x=xx, y=yy, method="nearest").values[0])
-    slop = round(slope.sel(x=xx, y=yy, method="nearest").values[0])
-    asp = round(aspect.sel(x=xx, y=yy, method="nearest").values[0])
+        elev = round(elevation.sel(x=xx, y=yy, method="nearest").values[0])
+        slop = round(slope.sel(x=xx, y=yy, method="nearest").values[0])
+        asp = round(aspect.sel(x=xx, y=yy, method="nearest").values[0])
+    except:
+        elev, slop, asp = np.nan, np.nan, np.nan
+        print(f"{cell_id} does not have copernicus DEM data, manual input")
 
     return cell_id, elev, slop, asp
 
