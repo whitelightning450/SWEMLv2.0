@@ -8,8 +8,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.dates import MonthLocator, DateFormatter
+import os
+HOME = os.path.expanduser('~')
 
-def Parity_Evaluation_Plots(DF, regionlist, modelname):
+def Parity_Evaluation_Plots(DF, regionlist, modelname, savefig, figname):
 
     fontsize = 12
     pred_col = f"{modelname}_swe_cm"
@@ -45,6 +47,9 @@ def Parity_Evaluation_Plots(DF, regionlist, modelname):
     
     #Add a 1:1 prediction:observation plot
     ax.plot((0,ymax),(0,ymax), linestyle = '--', color  = 'red')
+
+    if savfig==True:
+        plt.savefig(f"{HOME}SWEMLv2.0/Evaluation/Figures/{figname}.png", dpi =600, bbox_inches='tight')
 
     plt.show()
     
@@ -152,11 +157,11 @@ def SamplePreds(regionlist, PredsDF, df,n_samples):
 
     return sampleDF, PredsDF
 
-def Simple_Eval(regionlist, PredsDF, prediction_columns, modelname, plots = False, keystats = False):
+def Simple_Eval(regionlist, PredsDF, prediction_columns, modelname, savfig, figname, plots = False, keystats = False):
     
     plotdf = PredsDF.copy()
     plotdf.reset_index(inplace = True, drop = False)
-    Parity_Evaluation_Plots(plotdf, regionlist, modelname)
+    Parity_Evaluation_Plots(plotdf, regionlist, modelname, savfig, figname)
 
     #put the below into a DF so we can compare all sites..determine overall and regional skill
     region = pd.DataFrame()
