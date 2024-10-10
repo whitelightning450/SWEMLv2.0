@@ -11,7 +11,7 @@ from matplotlib.dates import MonthLocator, DateFormatter
 import os
 HOME = os.path.expanduser('~')
 
-def Parity_Evaluation_Plots(DF, regionlist, modelname, savefig, figname):
+def Parity_Evaluation_Plots(DF, regionlist, modelname, savfig, figname):
 
     fontsize = 12
     pred_col = f"{modelname}_swe_cm"
