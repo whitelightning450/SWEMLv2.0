@@ -19,7 +19,7 @@ def sample_sturm_data(sturm_file, coords):
             row, col = int(row), int(col)
             # Check if the indices are within the bounds of the raster
             if 0 <= row < sturm_data.shape[0] and 0 <= col < sturm_data.shape[1]:
-                value = sturm_data[row, col]
+                value = sturm_data[col, row] #all sturm values were the same, looks like row, col was incorrect, should be col, row
                 values.append(value)
             else:
                 values.append(np.nan)  # Append NaN if coordinates are out of bounds
@@ -69,4 +69,4 @@ def process_sturm_data_for_files(input_directory, sturm_file, output_directory):
         current_gdf.drop(columns='geometry').to_parquet(output_file)
 
         # Display a random selection of rows with the new sturm_value column
-        print(current_gdf.sample(n=5))
+        #print(current_gdf.sample(n=5))
