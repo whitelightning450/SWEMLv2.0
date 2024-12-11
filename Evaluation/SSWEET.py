@@ -13,6 +13,7 @@ import h5py
 import tables
 import random
 import matplotlib.pyplot as plt
+from matplotlib.colors import TwoSlopeNorm
 import seaborn as sns
 import sklearn
 from sklearn.metrics import mean_squared_error
@@ -63,7 +64,10 @@ def load_Predictions(Region_list):
 
 
 #Function to convert predictions into parity plot plus evaluation metrics
-def parityplot(EvalDF, savfig, figname):   
+def parityplot(EvalDF, savfig, region, watershed, date):   
+
+    Title = f"SWEMLv2.0 Model Performance {date} \n {watershed} River Basin, {region}"
+    figname = f"./Figures/{region}_{watershed}_parity_{date}.png"
     
     #Plot the results in a parity plot
     sns.set(style='ticks')
@@ -73,10 +77,12 @@ def parityplot(EvalDF, savfig, figname):
     plt.plot([0,SWEmax], [0,SWEmax], color = 'red', linestyle = '--')
     plt.xlabel('Observed SWE (cm)')
     plt.ylabel('Predicted SWE (cm)')
-    plt.show()
+    plt.title(Title)
 
     if savfig==True:
-        plt.savefig(f"./Figures/{figname}.png", dpi =600, bbox_inches='tight')
+        plt.savefig(figname, dpi =600, bbox_inches='tight')
+
+    plt.show()
 
     #Run model evaluate functions
     #Regional
@@ -119,7 +125,9 @@ def parityplot(EvalDF, savfig, figname):
     
     
 #Plot the error/prediction compared to different variables
-def Model_Vs(EvalDF,metric,model_output):
+def Model_Vs(EvalDF,metric,model_output,savfig, region, watershed, date):   
+
+    figname = f"./Figures/{region}_{watershed}_{metric}_{model_output}_{date}.png"
         
     #Calculate error
     EvalDF['error'] = EvalDF['y_test'] - EvalDF['y_pred']
@@ -154,17 +162,22 @@ def Model_Vs(EvalDF,metric,model_output):
         xlabel = 'Latitude'
     if metric == 'prev_SWE_error':
         xlabel = 'Error in Previous SWE Estimate'
+
+    Title = f"{model_output} by {xlabel} {date} \n {watershed} River Basin, {region}"
     
     sns.set(style='ticks')
     sns.relplot(data=EvalDF, x=metric, y=Y, aspect=1.61)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.title(f"{model_output} by {xlabel}", fontsize = 20)
+    plt.title(Title, fontsize = 20)
+    if savfig==True:
+            plt.savefig(figname, dpi =600, bbox_inches='tight')
+
     plt.show()
 
 
 
-def SpatialAnalysis(EvalDF, cmap, var, Title, savfig, variant, figname):
+def SpatialAnalysis(EvalDF, markersize, cmap, var, Title, savfig, variant, figname):
     #Convert to a geopandas DF
     Pred_Geo = gpd.GeoDataFrame(EvalDF, geometry = gpd.points_from_xy(EvalDF.cen_lon, EvalDF.cen_lat), crs=4326)
 
@@ -174,25 +187,31 @@ def SpatialAnalysis(EvalDF, cmap, var, Title, savfig, variant, figname):
     Pred_Geo = Pred_Geo.to_crs(epsg=3857)
 
 
-    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    plt.set_cmap(cmap) 
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    norm = TwoSlopeNorm(vmin=Pred_Geo['y_error'].min(), vcenter=0, vmax=Pred_Geo['y_error'].max())
+
+    #plt.set_cmap(cmap) 
 
     Pred_Geo.plot(column=var,
                   ax = ax,
                   legend=True,
-                  markersize=3,
-                  legend_kwds={"label": "SWE (cm)", "orientation": "vertical"}
+                  markersize=markersize,
+                  marker = 's',
+                  legend_kwds={"label": "SWE (cm)", "orientation": "vertical"},
+                  cmap = cmap,
+                  norm = norm
                 )
-    ax.set_xlim(-1.335e7, -1.325e7)
-    ax.set_ylim(4.515e6, 4.58e6)
+    # ax.set_xlim(-1.335e7, -1.325e7)
+    # ax.set_ylim(4.515e6, 4.58e6)
     cx.add_basemap(ax, source="https://server.arcgisonline.com/ArcGIS/rest/services/"+variant+"/MapServer/tile/{z}/{y}/{x}")   #cx.providers.OpenStreetMap.Mapnik)
     ax.set_axis_off()
     # ax.text(-1.345e7, 4.64e6, f"SWE estimate: {date}", fontsize =14)
 
     plt.title(Title)
+    print('Error = observations - predictions')
 
     if savfig == True:
-        plt.savefig(f"./Figures/{figname}.png", dpi =600, bbox_inches='tight')
+        plt.savefig(figname, dpi =600, bbox_inches='tight')
     
     
     

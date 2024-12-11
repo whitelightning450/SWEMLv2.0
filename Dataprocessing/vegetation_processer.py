@@ -25,6 +25,8 @@ def sample_vegetation_data(vegetation_file, coords):
                 # Check if the indices are within the bounds of the raster
                 if 0 <= row < vegetation_data.shape[0] and 0 <= col < vegetation_data.shape[1]:
                     value = vegetation_data[row, col]
+                    #value = vegetation_data[col, row] #all veg values were the same, looks like row, col was incorrect, should be col, row
+
                     #print(f"Sampled value: {value} at (row, col): ({row}, {col})")
                     values.append(value)
                 else:
@@ -80,4 +82,4 @@ def process_vegetation_data_for_files(input_directory, vegetation_file, output_d
         current_gdf.drop(columns='geometry').to_parquet(output_file)
 
         # Display the first few rows with the new vegetation_value column
-        print(current_gdf.head())
+        #print(current_gdf.head())
