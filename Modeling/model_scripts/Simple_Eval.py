@@ -49,7 +49,7 @@ def Parity_Evaluation_Plots(DF, regionlist, modelname, savfig, figname):
     ax.plot((0,ymax),(0,ymax), linestyle = '--', color  = 'red')
 
     if savfig==True:
-        plt.savefig(f"{HOME}SWEMLv2.0/Evaluation/Figures/{figname}.png", dpi =600, bbox_inches='tight')
+        plt.savefig(f"{HOME}/SWEMLv2.0/Evaluation/Figures/{figname}.png", dpi =600, bbox_inches='tight')
 
     plt.show()
     

@@ -66,6 +66,7 @@ BUCKET = S3.Bucket(BUCKET_NAME)
 fs = s3fs.S3FileSystem(anon=False, key=ACCESS['Access key ID'][0], secret=ACCESS['Secret access key'][0])
 
 
+#def get_ML_Data(regionlist, output_res, DataFrame, fSCA_thresh, remove0swe, removeswe_thresh):
 def get_ML_Data(regionlist, output_res, DataFrame, fSCA_thresh):
 
     #Get processed training data 
@@ -108,8 +109,20 @@ def get_ML_Data(regionlist, output_res, DataFrame, fSCA_thresh):
         #Add dataframes together
         regiondf = pd.concat([regiondf, trainingDF])
 
+    #remove the large amounts of zero values
+    # if remove0swe ==True:
+    #     regiondf = regiondf[regiondf['swe_cm']>removeswe_thresh]
+
     print(f"There are {len(regiondf)} datapoints for model training/testing in the overall modeling domain.")
 
     regiondf.reset_index(inplace=True, drop=True)
 
     return regiondf
+
+def remove0swe(df, remove0swe, removeswe_thresh):
+    if remove0swe ==True:
+        nonzeroSWE_df = df[df['swe_cm']>removeswe_thresh]
+
+    print(f"There are {len(nonzeroSWE_df)} in the training dataset, removing {len(df)-len(nonzeroSWE_df)} zero values in the ASO dataset, VIIRS fSCA will capture these.")
+    
+    return nonzeroSWE_df

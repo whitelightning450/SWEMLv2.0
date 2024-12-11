@@ -140,7 +140,7 @@ def mlp_scaler(regionlist, df, years, splitratio, test_years, target, input_colu
     for region in regionlist:
         regionDF = df[df['region'] == region].copy()
 
-        display(regionDF.head(5))
+        #display(regionDF.head(5))
 
         X = regionDF[input_columns]
         y = regionDF[target]
@@ -229,7 +229,7 @@ def xgb_processor(regionlist, df, years, splitratio, test_years, target, input_c
     for region in regionlist:
         regionDF = df[df['region'] == region].copy()
 
-        display(regionDF.head(5))
+        # display(regionDF.head(5))
 
         X = regionDF[input_columns]
         y = regionDF[target]
