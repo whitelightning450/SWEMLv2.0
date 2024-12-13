@@ -160,8 +160,14 @@ def Model_Vs(EvalDF,metric,model_output,savfig, region, watershed, date):
         xlabel = 'Previous SWE Estimate'
     if metric == 'Lat':
         xlabel = 'Latitude'
-    if metric == 'prev_SWE_error':
-        xlabel = 'Error in Previous SWE Estimate'
+    if metric == 'Aspect_Deg':
+        xlabel = 'Aspect Degree'
+    if metric == 'Slope_Deg':
+        xlabel = 'Slope (%)'
+    if metric == 'season_precip_cm':
+        xlabel = 'Precipitation (cm)'
+    if metric == 'sturm_value':
+        xlabel = 'Sturm Snow Classification'
 
     Title = f"{model_output} by {xlabel} {date} \n {watershed} River Basin, {region}"
     
@@ -188,19 +194,57 @@ def SpatialAnalysis(EvalDF, markersize, cmap, var, Title, savfig, variant, figna
 
 
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-    norm = TwoSlopeNorm(vmin=Pred_Geo['y_error'].min(), vcenter=0, vmax=Pred_Geo['y_error'].max())
-
-    #plt.set_cmap(cmap) 
-
-    Pred_Geo.plot(column=var,
-                  ax = ax,
-                  legend=True,
-                  markersize=markersize,
-                  marker = 's',
-                  legend_kwds={"label": "SWE (cm)", "orientation": "vertical"},
-                  cmap = cmap,
-                  norm = norm
+    if var == 'error':
+        norm = TwoSlopeNorm(vmin=Pred_Geo['y_error'].min(), vcenter=0, vmax=Pred_Geo['y_error'].max())
+        Pred_Geo.plot(column=var,
+                    ax = ax,
+                    legend=True,
+                    markersize=markersize,
+                    marker = 's',
+                    legend_kwds={"label": "SWE (cm)", "orientation": "vertical"},
+                    cmap = cmap,
+                    norm = norm
+                    )
+        
+    if var == 'y_pred':
+        vmin = 0
+        vmax = max(Pred_Geo['y_test'].max(), Pred_Geo['y_pred'].max())
+        Pred_Geo.plot(column=var,
+                ax = ax,
+                legend=True,
+                markersize=markersize,
+                marker = 's',
+                legend_kwds={"label": "SWE (cm)", "orientation": "vertical"},
+                cmap = cmap,
+                vmin=vmin, 
+                vmax=vmax
                 )
+        
+    if var == 'y_test':
+        vmin = 0
+        vmax = max(Pred_Geo['y_test'].max(), Pred_Geo['y_pred'].max())
+        Pred_Geo.plot(column=var,
+                ax = ax,
+                legend=True,
+                markersize=markersize,
+                marker = 's',
+                legend_kwds={"label": "SWE (cm)", "orientation": "vertical"},
+                cmap = cmap,
+                vmin=vmin, 
+                vmax=vmax
+                )
+        
+    if var == 'season_precip_cm':
+        Pred_Geo.plot(column=var,
+                ax = ax,
+                legend=True,
+                markersize=markersize,
+                marker = 's',
+                legend_kwds={"label": 'Precipitation (cm)', "orientation": "vertical"},
+                cmap = cmap,
+                )
+    
+
     # ax.set_xlim(-1.335e7, -1.325e7)
     # ax.set_ylim(4.515e6, 4.58e6)
     cx.add_basemap(ax, source="https://server.arcgisonline.com/ArcGIS/rest/services/"+variant+"/MapServer/tile/{z}/{y}/{x}")   #cx.providers.OpenStreetMap.Mapnik)
@@ -469,4 +513,57 @@ def Map_Plot_Eval(RegionTest, yaxis, error_metric, Region_list):
     
 
 
-     
+
+ #make plot of water at different elevation bands and aspects
+def barplot(EvalDF, cols, scaler, ylab, ncol, Title, save, figname):
+    col = ['y_pred', 'y_test', 'Elevation_m']
+
+    df = EvalDF[col].copy()
+    Elevation_range = df['Elevation_m'].max()-df['Elevation_m'].min()
+    Etier = Elevation_range/3
+    low = int(round(df['Elevation_m'].min()+Etier,0))
+    mid =  int(round(df['Elevation_m'].min()+(2*Etier),0))
+
+    lowdf = df[df['Elevation_m']<low]
+    middf = df[(df['Elevation_m']>low) & (df['Elevation_m']<mid)]
+    highdf = df[df['Elevation_m']>mid]
+
+    lowobs = len(lowdf)
+    midobs = len(middf)
+    highobs = len(highdf)
+
+    lowdf = pd.DataFrame(lowdf.mean()).T
+    middf = pd.DataFrame(middf.mean()).T
+    highdf = pd.DataFrame(highdf.mean()).T
+
+    #get total watervolumes
+    lowdf['Predicted_Volume'] = lowdf['y_pred']/100*lowobs*300
+    middf['Predicted_Volume'] = middf['y_pred']/100*midobs*300
+    highdf['Predicted_Volume'] = highdf['y_pred']/100*highobs*300
+
+    lowdf['Observed_Volume'] = lowdf['y_test']/100*lowobs*300
+    middf['Observed_Volume'] = middf['y_test']/100*midobs*300
+    highdf['Observed_Volume'] = highdf['y_test']/100*highobs*300
+
+    tierdf = pd.concat([lowdf, middf, highdf])
+    tierdf['Volume_Difference'] = tierdf['Predicted_Volume']-tierdf['Observed_Volume']
+
+    tierdf =round(tierdf, 0)
+    tierdf['Elevation_Range'] = [f"Below {low}m", f"{low}m - {mid}m", f"Above {mid}m"]
+    tierdf.set_index('Elevation_Range', inplace=True)
+    tierdf.rename(columns={'y_pred':'Mean_SWE_Prediction',
+                        'y_test':'Mean_SWE_Observation'}, inplace=True)
+
+    df = tierdf[cols]
+    df = df/scaler
+
+    #f, ax = plt.subplots(nrows=1, ncols=1, figsize=(6, 6))
+    ax = df.plot.bar(rot=0)
+    ax.set_ylabel(ylab)
+    ax.legend(loc='lower center', bbox_to_anchor=(0.5, -.265), ncol =ncol,fancybox=True)
+    plt.title(Title)
+
+    if save ==True:
+        plt.savefig(figname, dpi=600, bbox_inches="tight")
+
+    return df
