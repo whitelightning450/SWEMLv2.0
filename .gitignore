@@ -19,3 +19,4 @@ Model/.ipynb_checkpoints/
 *.nc
 *.zarr
 *.geotiff
+*.png
