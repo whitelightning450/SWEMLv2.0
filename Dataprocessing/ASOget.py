@@ -75,20 +75,28 @@ earthaccess.login(persist=True)
 '''
 
 #load access key
-HOME = os.path.expanduser('~')
-KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
-ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+#HOME = os.getcwd()
+HOME = os.chdir('..')
+HOME = os.getcwd()
+#HOME = os.path.expanduser('~')
+KEYPATH = "AWSaccessKeys.csv"
 
-#start session
-SESSION = boto3.Session(
-    aws_access_key_id=ACCESS['Access key ID'][0],
-    aws_secret_access_key=ACCESS['Secret access key'][0],
-)
-S3 = SESSION.resource('s3')
-#AWS BUCKET information
-BUCKET_NAME = 'national-snow-model'
-#S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
-BUCKET = S3.Bucket(BUCKET_NAME)
+if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
+    ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+
+    #start session
+    SESSION = boto3.Session(
+        aws_access_key_id=ACCESS['Access key ID'][0],
+        aws_secret_access_key=ACCESS['Secret access key'][0],
+    )
+    S3 = SESSION.resource('s3')
+    #AWS BUCKET information
+    BUCKET_NAME = 'national-snow-model'
+    #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
+    BUCKET = S3.Bucket(BUCKET_NAME)
+else:
+    print("no AWS credentials present, skipping")
+
 
 
 class ASODataTool:
@@ -135,7 +143,8 @@ class ASODataTool:
         return credentials
 
     def cmr_download(self, directory, region):
-        dpath = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{directory}"
+        #dpath = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{directory}"
+        dpath = f"{HOME}/data/ASO/{region}/{directory}"
         if not os.path.exists(dpath):
             os.makedirs(dpath, exist_ok=True)
         
@@ -150,7 +159,9 @@ class ASODataTool:
 
     @staticmethod
     def get_bounding_box(region):
-        dpath = f"{HOME}/SWEMLv2.0/data/PreProcessed"
+        #dpath = f"{HOME}/SWEMLv2.0/data/PreProcessed"
+        dpath = f"{HOME}/data/PreProcessed"
+
         regions = pd.read_pickle(f"{dpath}/SWEMLV2Regions.pkl")
         # except:
         #     print('File not local, getting from AWS S3.')
@@ -227,9 +238,10 @@ class ASODataProcessing:
             # Reproject and resample, the Res # needs to be in degrees, ~111,111m to 1 degree
             Res = output_res/111111
             gdal.Warp(output_file, ds, dstSRS="EPSG:4326", xRes=Res, yRes=-Res, resampleAlg="bilinear")
-    
+            print('gdal done')
             # Read the processed TIFF file using rasterio
             rds = rxr.open_rasterio(output_file)
+            print('rds made')
             rds = rds.squeeze().drop("spatial_ref").drop("band")
             rds.name = "data"
             df = rds.to_dataframe().reset_index()
@@ -280,6 +292,7 @@ class ASODataProcessing:
             
             # Reproject and resample, the Res # needs to be in degrees 0.00009 is equivalent to ~100 m
             Res = output_res/111111
+            
             gdal.Warp(output_file, ds, dstSRS="EPSG:4326", xRes=Res, yRes=-Res, resampleAlg="bilinear")
 
             # Read the processed TIFF file using rasterio
@@ -350,7 +363,8 @@ class ASODataProcessing:
     def convert_tiff_to_parquet_multiprocess(self, input_folder, output_res, region):
 
         print('Converting .tif to parquet')
-        dir = f"{HOME}/SWEMLv2.0/data/ASO/"
+        # dir = f"{HOME}/SWEMLv2.0/data/ASO/"
+        dir = f"{HOME}/data/ASO/"
         folder_path = os.path.join(dir, input_folder)
         
         # Check if the folder exists and is not empty
@@ -363,7 +377,7 @@ class ASODataProcessing:
             return
 
         tiff_files = [filename for filename in os.listdir(folder_path) if filename.endswith(".tif")]
-        print(f"Converting {len(tiff_files)} ASO tif files to parquet'")
+        print(f"Converting {len(tiff_files)} ASO tif files to parquet")
         
         # Create parquet files from TIFF files
         with cf.ProcessPoolExecutor(max_workers=None) as executor: 
