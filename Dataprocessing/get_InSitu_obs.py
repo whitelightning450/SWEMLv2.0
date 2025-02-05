@@ -13,31 +13,267 @@ from botocore.client import Config
 import os
 import pyarrow as pa
 import pyarrow.parquet as pq
-
+import geopandas as gpd
+import sys
+import pytz
+import urllib3
+import datetime
+import pyproj
 from datetime import timedelta
 
 warnings.filterwarnings("ignore")
 
 #load access key
-HOME = os.path.expanduser('~')
-KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
-ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+#HOME = os.getcwd()
+HOME = os.chdir('..')
+HOME = os.getcwd()
+#HOME = os.path.expanduser('~')
+KEYPATH = "AWSaccessKeys.csv"
 
-#start session
-SESSION = boto3.Session(
-    aws_access_key_id=ACCESS['Access key ID'][0],
-    aws_secret_access_key=ACCESS['Secret access key'][0],
-)
-S3 = SESSION.resource('s3')
-#AWS BUCKET information
-BUCKET_NAME = 'national-snow-model'
-#S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
-BUCKET = S3.Bucket(BUCKET_NAME)
+if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
+    ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+
+    #start session
+    SESSION = boto3.Session(
+        aws_access_key_id=ACCESS['Access key ID'][0],
+        aws_secret_access_key=ACCESS['Secret access key'][0],
+    )
+    S3 = SESSION.resource('s3')
+    #AWS BUCKET information
+    BUCKET_NAME = 'national-snow-model'
+    #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
+    BUCKET = S3.Bucket(BUCKET_NAME)
+else:
+    print("no AWS credentials present, skipping")
+
+us_state_to_abbrev = {
+    "Alabama": "AL",
+    "Alaska": "AK",
+    "Arizona": "AZ",
+    "Arkansas": "AR",
+    "California": "CA",
+    "Colorado": "CO",
+    "Connecticut": "CT",
+    "Delaware": "DE",
+    "Florida": "FL",
+    "Georgia": "GA",
+    "Hawaii": "HI",
+    "Idaho": "ID",
+    "Illinois": "IL",
+    "Indiana": "IN",
+    "Iowa": "IA",
+    "Kansas": "KS",
+    "Kentucky": "KY",
+    "Louisiana": "LA",
+    "Maine": "ME",
+    "Maryland": "MD",
+    "Massachusetts": "MA",
+    "Michigan": "MI",
+    "Minnesota": "MN",
+    "Mississippi": "MS",
+    "Missouri": "MO",
+    "Montana": "MT",
+    "Nebraska": "NE",
+    "Nevada": "NV",
+    "New Hampshire": "NH",
+    "New Jersey": "NJ",
+    "New Mexico": "NM",
+    "New York": "NY",
+    "North Carolina": "NC",
+    "North Dakota": "ND",
+    "Ohio": "OH",
+    "Oklahoma": "OK",
+    "Oregon": "OR",
+    "Pennsylvania": "PA",
+    "Rhode Island": "RI",
+    "South Carolina": "SC",
+    "South Dakota": "SD",
+    "Tennessee": "TN",
+    "Texas": "TX",
+    "Utah": "UT",
+    "Vermont": "VT",
+    "Virginia": "VA",
+    "Washington": "WA",
+    "West Virginia": "WV",
+    "Wisconsin": "WI",
+    "Wyoming": "WY",
+    "District of Columbia": "DC",
+    "American Samoa": "AS",
+    "Guam": "GU",
+    "Northern Mariana Islands": "MP",
+    "Puerto Rico": "PR",
+    "United States Minor Outlying Islands": "UM",
+    "Virgin Islands, U.S.": "VI",
+}
+
+
+def getCaliSNOTELData(args):
+    SWE_df, SiteName, SiteID, StateAbb, StartDate, EndDate =  args
+    StateAbb = 'Ca'
+    url1 = 'https://wcc.sc.egov.usda.gov/reportGenerator/view_csv/customMultiTimeSeriesGroupByStationReport/daily/start_of_period/'
+    url2 = f'{SiteID}:CA:MSNT%257Cid=%2522%2522%257Cname/'
+    url3 = f'{StartDate},{EndDate}/'
+    url4 = 'WTEQ::value?fitToScreen=false'
+    url = url1+url2+url3+url4
+    print(f'Start retrieving data for {SiteName}, {SiteID}')
+    print(url)
+
+    http = urllib3.PoolManager()
+    response = http.request('GET', url)
+    data = response.data.decode('utf-8')
+    i=0
+    for line in data.split("\n"):
+        if line.startswith("#"):
+            i=i+1
+    data = data.split("\n")[i:]
+
+    df = pd.DataFrame.from_dict(data)
+    df = df[0].str.split(',', expand=True)
+    df.rename(columns={0:df[0][0], 
+                        1:df[1][0]}, inplace=True)
+    df.drop(0, inplace=True)
+    df.dropna(inplace=True)
+    df.reset_index(inplace=True, drop=True)
+    df["Date"] = pd.to_datetime(df["Date"])
+    df.rename(columns={df.columns[1]:SiteID}, inplace=True)
+    df.iloc[:, 1:] = df.iloc[:, 1:].apply(lambda x: pd.to_numeric(x) * 0.0254)  # convert in to m
+    df['Water_Year'] = pd.to_datetime(df['Date']).map(lambda x: x.year+1 if x.month>9 else x.year)
+    df.rename(columns = {'Date':'date'}, inplace = True)
+    df. set_index('date', inplace = True)
+    SWE_df.update(df[SiteID])
+
+def getSNOTELData(args):
+    SWE_df, SiteName, SiteID, StateAbb, StartDate, EndDate =  args
+    id = SiteID.partition('_')[0]
+    url1 = 'https://wcc.sc.egov.usda.gov/reportGenerator/view_csv/customMultiTimeSeriesGroupByStationReport/daily/start_of_period/'
+    url2 = f'{id}:{StateAbb}:SNTL%7Cid=%22%22%7Cname/'
+    url3 = f'{StartDate},{EndDate}/'
+    url4 = 'WTEQ::value?fitToScreen=false'
+    url = url1+url2+url3+url4
+    print(f'Start retrieving data for {SiteName}, {SiteID} using {url}')
+    
+    http = urllib3.PoolManager()
+    response = http.request('GET', url)
+    data = response.data.decode('utf-8')
+    i=0
+    for line in data.split("\n"):
+        if line.startswith("#"):
+            i=i+1
+    data = data.split("\n")[i:]
+    
+    df = pd.DataFrame.from_dict(data)
+    df = df[0].str.split(',', expand=True)
+    df.rename(columns={0:df[0][0], 
+                        1:df[1][0]}, inplace=True)
+    df.drop(0, inplace=True)
+    df.dropna(inplace=True)
+    df.reset_index(inplace=True, drop=True)
+    df["Date"] = pd.to_datetime(df["Date"])
+    df.rename(columns={df.columns[1]:SiteID}, inplace=True)
+    df.iloc[:, 1:] = df.iloc[:, 1:].apply(lambda x: pd.to_numeric(x) * 0.0254)  # convert in to m
+    df['Water_Year'] = pd.to_datetime(df['Date']).map(lambda x: x.year+1 if x.month>9 else x.year)
+    df.rename(columns = {'Date':'date'}, inplace = True)
+    df. set_index('date', inplace = True)
+    SWE_df.update(df[SiteID])
+    
+
+
+
+def Get_Monitoring_Data_Threaded_Updated(years, start_m_d, end_m_d, WY=True):
+    
+    snotel_path = f"{HOME}/data/SNOTEL_Data"
+    # Create geodataframe of all stations
+    print('getting in situ snow obs metadata')
+    all_stations_gdf = gpd.read_file('https://raw.githubusercontent.com/egagli/snotel_ccss_stations/main/all_stations.geojson').set_index('code')
+    all_stations_gdf = all_stations_gdf[all_stations_gdf['csvData']==True]
+    all_stations_gdf.reset_index(inplace = True, drop = False)
+    #Add station id to template to use new snotel data assimilation script
+    all_stations_gdf['stateabv'] =  "N/A"
+    for site in np.arange(0,len(all_stations_gdf),1):
+        try:
+            all_stations_gdf['stateabv'][site] = us_state_to_abbrev[all_stations_gdf['state'][site]]
+        except:
+            print('cannont get state abrv', site)
+        
+    #separate into SNOTEL and CCSS stations
+    CCSS_gdf = all_stations_gdf[all_stations_gdf['network'] == 'CCSS'].copy()
+    SNOTEL_gdf = all_stations_gdf[all_stations_gdf['network'] == 'SNOTEL'].copy()
+    CCSS_gdf.reset_index(inplace = True, drop =True)
+    SNOTEL_gdf.reset_index(inplace = True, drop =True)
+    
+    #get site ids to collect data
+    CDECsites = list(CCSS_gdf.code)
+    SNOTELsites = list(SNOTEL_gdf.code)
+    station_ids = CDECsites + SNOTELsites
+
+    for year in years:
+        if WY == True:
+            dates = list(pd.date_range(start=f"{year-1}-{start_m_d}",end=f"{year}-{end_m_d}"))
+
+        else:
+            dates = list(pd.date_range(start=f"{year}-{start_m_d}",end=f"{year}-{end_m_d}"))
+        
+        dates = [d.strftime("%Y-%m-%d") for d in dates]
+        SWE_df = pd.DataFrame(columns= station_ids)
+        SWE_df['dates'] = dates
+        SWE_df.set_index('dates', inplace = True)
+        SWE_df.fillna(-9999, inplace = True)
+
+        print(f"Getting SNOTEL and CDEC observations for {year}")
+        start_date = dates[0]
+        end_date = dates[-1]
+    
+
+        resolution = 'D'
+        sensor_id = '3'
+        bad_sites = []
+    
+        print(f"Getting California Data Exchange Center SWE data from {len(CDECsites)} sites...") 
+        with cf.ThreadPoolExecutor(max_workers=6) as executor:
+            {executor.submit(getCaliSNOTELData, (SWE_df, CCSS_gdf.name[site], CCSS_gdf.code[site], CCSS_gdf.stateabv[site] , start_date, end_date)): site for site in tqdm_notebook(np.arange(0, len(CDECsites),1))}
+
+        # for site in tqdm_notebook(CDECsites):
+        #     args = SWE_df, site, sensor_id, resolution, start_date, end_date
+        #     getCaliSNOTELData(args)
+            
+            
+        print(f"Getting NRCS SNOTEL SWE data from {len(SNOTELsites)} sites...") 
+        with cf.ThreadPoolExecutor(max_workers=None) as executor:
+            {executor.submit(getSNOTELData, (SWE_df, SNOTEL_gdf.name[site], SNOTEL_gdf.code[site], SNOTEL_gdf.stateabv[site] , start_date, end_date)): site for site in tqdm_notebook(np.arange(0, len(SNOTELsites),1))}
+
+        # for site in tqdm_notebook(CDECsites):
+        #     args = SWE_df, site, start_date, end_date
+        #     get_SNOTEL_Threaded_dp(args)
+
+        for col in CDECsites:
+        # remove -- from CDEC predictions and make df a float
+            SWE_df[col] = SWE_df[col].astype(str)
+            SWE_df[col] = SWE_df[col].replace(['--'], '-9999')
+            SWE_df[col] = pd.to_numeric(SWE_df[col], errors='coerce')
+            SWE_df[col] = SWE_df[col].fillna(-9999)
+
+    
+        #convert to cm
+        SWE_df = round(SWE_df*2.54,1)
+        cols = SWE_df.columns
+        #make all values close to 0, 0
+        for col in cols:
+            SWE_df[col][(SWE_df[col] <0.3) & (SWE_df[col]> -20)] = 0
+            SWE_df[col][SWE_df[col] < -10] = -9999
+
+        table = pa.Table.from_pandas(SWE_df)
+        # Parquet with Brotli compression
+        pq.write_table(table,f"{snotel_path}/{year}_ground_measures_dp.parquet", compression='BROTLI')
+
+
+
 
 
 def Get_Monitoring_Data_Threaded_dp(years, start_m_d, end_m_d, WY=True):
     
-    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data"
+    #snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data"
+    snotel_path = f"{HOME}/data/SNOTEL_Data"
+
     GM_template = pd.read_parquet(f"{snotel_path}/ground_measures_metadata.parquet")
     
     # Get all records, can filter later,
@@ -200,7 +436,8 @@ def make_dates(years, start_m_d, end_m_d, WY = True):
     return datelist
 
 def combine_dfs(years):
-    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data"
+    #snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data"
+    snotel_path = f"{HOME}/data/SNOTEL_Data"
     df = pd.DataFrame()
     for year in years:
         year_df = pd.read_parquet(f"{snotel_path}/{year}_ground_measures_dp.parquet")
@@ -331,8 +568,11 @@ def get_CDEC_Threaded(args): #https://ulmo.readthedocs.io/en/latest/api.html ulm
 
 def Get_Monitoring_Data_Threaded(dates):
     
-    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data"
-    GM_template = pd.read_parquet(f"{snotel_path}/ground_measures.parquet")
+    #snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data"
+    snotel_path = f"{HOME}/data/SNOTEL_Data"
+    #GM_template = pd.read_parquet(f"{snotel_path}/ground_measures.parquet")
+    GM_template = pd.read_parquet(f"{snotel_path}/ground_measures_metadata.parquet")
+
 
     # Get all records, can filter later,
     CDECsites = list(GM_template.index)

@@ -10,26 +10,33 @@ from botocore.client import Config
 
 
 #load access key
-HOME = os.path.expanduser('~')
-KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
-ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+#HOME = os.getcwd()
+HOME = os.chdir('..')
+HOME = os.getcwd()
+#HOME = os.path.expanduser('~')
+KEYPATH = "AWSaccessKeys.csv"
 
-#start session
-SESSION = boto3.Session(
-    aws_access_key_id=ACCESS['Access key ID'][0],
-    aws_secret_access_key=ACCESS['Secret access key'][0],
-)
-S3 = SESSION.resource('s3')
-#AWS BUCKET information
-BUCKET_NAME = 'national-snow-model'
-#S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
-BUCKET = S3.Bucket(BUCKET_NAME)
+if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
+    ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+
+    #start session
+    SESSION = boto3.Session(
+        aws_access_key_id=ACCESS['Access key ID'][0],
+        aws_secret_access_key=ACCESS['Secret access key'][0],
+    )
+    S3 = SESSION.resource('s3')
+    #AWS BUCKET information
+    BUCKET_NAME = 'national-snow-model'
+    #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
+    BUCKET = S3.Bucket(BUCKET_NAME)
+else:
+    print("no AWS credentials present, skipping")
 
 
-HOME = os.path.expanduser('~')
+#HOME = os.path.expanduser('~')
 
 def modeldomain():
-    dpath = f"{HOME}/SWEMLv2.0/data/PreProcessed"
+    dpath = f"{HOME}/data/PreProcessed"
     try:
         regions = pd.read_pickle(f"{dpath}/RegionVal.pkl")
     except:
@@ -102,7 +109,9 @@ def modeldomain():
 def filecheck(awspaths,path,file):
 
     #Snotel metafile
-    dpath = f"{HOME}/SWEMLv2.0/{path}"
+    #dpath = f"{HOME}/SWEMLv2.0/{path}"
+    dpath = f"{HOME}/{path}"
+
     if os.path.isfile(f"{dpath}/{file}") == True:
         print(f"{file} is local")
     else:
