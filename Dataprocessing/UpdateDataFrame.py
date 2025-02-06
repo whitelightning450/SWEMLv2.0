@@ -7,11 +7,15 @@ from os.path import isfile, join
 from tqdm import tqdm
 from tqdm._tqdm_notebook import tqdm_notebook
 
-HOME = os.path.expanduser('~')
+#HOME = os.getcwd()
+HOME = os.chdir('..')
+HOME = os.getcwd()
+#HOME = os.path.expanduser('~')
 
 
 def updateTrainingDF(region, output_res, training_cat, fSCA, updatefile):
-    dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+#    dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    dfpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
 
     #load files
     updatefile = pd.read_parquet(f"{dfpath}/{region}_metadata.parquet")

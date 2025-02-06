@@ -43,6 +43,7 @@ from typing import Union
 from pathlib import Path
 from tqdm import tqdm
 from tqdm._tqdm_notebook import tqdm_notebook
+from tqdm.auto import tqdm
 import time
 import requests
 import concurrent.futures as cf
@@ -70,19 +71,27 @@ earthaccess.login(persist=True)
 '''
 
 #load access key
-HOME = os.path.expanduser('~')
-KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
-ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+#HOME = os.getcwd()
+HOME = os.chdir('..')
+HOME = os.getcwd()
+#HOME = os.path.expanduser('~')
+KEYPATH = "AWSaccessKeys.csv"
 
-#start session
-SESSION = boto3.Session(
-    aws_access_key_id=ACCESS['Access key ID'][0],
-    aws_secret_access_key=ACCESS['Secret access key'][0],
-)
-S3 = SESSION.resource('s3')
-#AWS BUCKET information
-BUCKET_NAME = 'national-snow-model'
-BUCKET = S3.Bucket(BUCKET_NAME)
+if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
+    ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+
+    #start session
+    SESSION = boto3.Session(
+        aws_access_key_id=ACCESS['Access key ID'][0],
+        aws_secret_access_key=ACCESS['Secret access key'][0],
+    )
+    S3 = SESSION.resource('s3')
+    #AWS BUCKET information
+    BUCKET_NAME = 'national-snow-model'
+    #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
+    BUCKET = S3.Bucket(BUCKET_NAME)
+else:
+    print("no AWS credentials present, skipping")
 
 def row_snotel(row, distance_cache, nearest_snotel, snotel_gdf, n):
     cell_id = row.name
@@ -104,13 +113,16 @@ def row_snotel(row, distance_cache, nearest_snotel, snotel_gdf, n):
 # Calculating nearest SNOTEL sites, n = the number of snotel sites
 def calculate_nearest_snotel(region, aso_gdf, snotel_gdf,output_res, n=6, distance_cache=None):
 
-    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    #nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    nearest_snotel_dict_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
+
     if distance_cache is None:
         distance_cache = {}
 
     nearest_snotel = {}
     print(f"Calculating haversine distance for {len(aso_gdf)} locations to in situ OBS, and saving cell-obs relationships in dictionary")
-    tqdm_notebook.pandas()
+    #tqdm_notebook.pandas()
+    tqdm.pandas()
     aso_gdf.progress_apply(lambda row: row_snotel(row, distance_cache, nearest_snotel, snotel_gdf,n), axis = 1) #try function to see if its working
 
     #saving nearest snotel file
@@ -156,8 +168,13 @@ def create_polygon(row):
 
 def fetch_snotel_sites_for_cellids(region, output_res):  
     #relative file paths
-    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
-    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
+    # aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
+    # snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
+    
+    aso_swe_files_folder_path = f"{HOME}/data/ASO/{region}/{output_res}M_SWE_parquet"
+    snotel_path = f"{HOME}/data/SNOTEL_Data/"
+    
+    
     Snotelmeta_path = f"{snotel_path}ground_measures_metadata.parquet"
     
     try:
@@ -188,7 +205,9 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     #Convert DataFrame to Apache Arrow Table
     table = pa.Table.from_pandas(ASO_meta_loc_DF)
     # Parquet with Brotli compression
-    metapath =  f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+   # metapath =  f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    metapath =  f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
+
     if not os.path.exists(metapath):
         os.makedirs(metapath, exist_ok=True)
     pq.write_table(table,f"{metapath}/ASO_meta.parquet", compression='BROTLI')
@@ -211,7 +230,8 @@ def fetch_snotel_sites_for_cellids(region, output_res):
 
 def GeoSpatial(region, output_res):
     print(f"Loading geospatial data for {region}")
-    ASO_meta_loc_DF = pd.read_parquet(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/ASO_meta.parquet")
+    # ASO_meta_loc_DF = pd.read_parquet(f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/ASO_meta.parquet")
+    ASO_meta_loc_DF = pd.read_parquet(f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/ASO_meta.parquet")
 
     cols = ['cen_lat', 'cen_lon']
     ASO_meta_loc_DF = ASO_meta_loc_DF[cols]
@@ -334,7 +354,10 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
     metadata_df = pd.concat([metadata_df, meta], axis = 1)
 
     #save regional dataframe
-    dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    # dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    dfpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
+
+    
     print(f"Saving {region} dataframe in {dfpath}")
     
     # Save the DataFrame as a parquet file
@@ -349,7 +372,10 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
 
 def add_geospatial_threaded(region, output_res):
     # Processed ASO observations folder with snotel measurements
-    TrainingDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    # TrainingDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    TrainingDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    
+    
     GeoObsdfs = f"{TrainingDFpath}/GeoObsDFs"
 
     #Make directory
