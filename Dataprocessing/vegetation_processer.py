@@ -5,6 +5,35 @@ import geopandas as gpd
 from tqdm import tqdm
 import rasterio
 from rasterio.warp import transform as warp_transform
+import requests
+import zipfile
+
+#set home directory
+HOME = os.chdir('..')
+HOME = os.getcwd()
+
+def get_data(url, output_path, file):
+
+    if not os.path.exists(f"{output_path}/{file}"):
+        os.makedirs(output_path, exist_ok=True)
+        try:
+            with requests.get(url, stream=True) as response:
+                response.raise_for_status()
+                with open(f"{output_path}/{file}", 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            print("File downloaded successfully!")
+        except requests.exceptions.RequestException as e:
+            print("Error downloading the file:", e)
+    else:
+        print('Landcover data already downloaded')
+
+def unzip_LC_data(output_path, file):
+
+    z = zipfile.ZipFile(f"{output_path}/{file}")
+    z.extractall(output_path)
+    print(f"All files successfully extracted to {output_path}")
+        
 
 # Function to sample Vegetation data at given coordinates with progress bar
 def sample_vegetation_data(vegetation_file, coords):

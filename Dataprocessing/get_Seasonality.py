@@ -9,7 +9,26 @@ import warnings
 import pickle as pkl
 warnings.filterwarnings("ignore")
 
-HOME = os.path.expanduser('~')
+#load access key
+HOME = os.chdir('..')
+HOME = os.getcwd()
+KEYPATH = "AWSaccessKeys.csv"
+
+if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
+    ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+
+    #start session
+    SESSION = boto3.Session(
+        aws_access_key_id=ACCESS['Access key ID'][0],
+        aws_secret_access_key=ACCESS['Secret access key'][0],
+    )
+    S3 = SESSION.resource('s3')
+    #AWS BUCKET information
+    BUCKET_NAME = 'national-snow-model'
+    #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
+    BUCKET = S3.Bucket(BUCKET_NAME)
+else:
+    print("no AWS credentials present, skipping")
 
 # creat Seasonality features
 #begin with day of year starting from October 1st
@@ -32,8 +51,10 @@ def seasonal_site_rel(df):
 
 def add_Seasonality(region, output_res, threshold):
     #load dataframe
-    DFpath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
-    Savepath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Seasonality_PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
+    # DFpath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
+    # Savepath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Seasonality_PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
+    DFpath = f'{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
+    Savepath = f'{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Seasonality_PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
     if not os.path.exists(Savepath):
         os.makedirs(Savepath, exist_ok=True)
 
@@ -101,8 +122,10 @@ def match_nearest_snotel(cell_id, WY_Week, n_snotel, ss_df):
 def add_nearest_snotel_ave(df, region, output_res):
 
     # set file paths
-    DFpath = f'{HOME}/SWEMLv2.0/data/SNOTEL_Data'
-    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    # DFpath = f'{HOME}/SWEMLv2.0/data/SNOTEL_Data'
+    # nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    DFpath = f'{HOME}/data/SNOTEL_Data'
+    nearest_snotel_dict_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
 
     #need to add WY week to ML dataframe
     df.reset_index(inplace = True)
@@ -154,7 +177,8 @@ def WY_week(df, week_id):
 
 def seasonal_snotel():
 
-    DFpath = f'{HOME}/SWEMLv2.0/data/SNOTEL_Data'
+    #DFpath = f'{HOME}/SWEMLv2.0/data/SNOTEL_Data'
+    DFpath = f'{HOME}/data/SNOTEL_Data'
     snotel = pd.read_parquet(f"{DFpath}/ground_measures_dp.parquet")
     #snotel = snotel.T
     snotel.reset_index(inplace = True)

@@ -5,6 +5,31 @@ import geopandas as gpd
 import sturm_processer as stpro
 from tqdm import tqdm
 import rasterio
+import subprocess
+import requests
+
+#set home directory
+HOME = os.chdir('..')
+HOME = os.getcwd()
+
+def get_Sturm_data():
+
+    url = "https://daacdata.apps.nsidc.org/pub/DATASETS/nsidc0768_global_seasonal_snow_classification_v01/SnowClass_NA_300m_10.0arcsec_2021_v01.0.tif"
+    output_path = f"{HOME}/data/SnowClassification/"
+    file = "SnowClass_NA_300m_10.0arcsec_2021_v01.0.tif" 
+    if not os.path.exists(output_path):
+        os.makedirs(output_path, exist_ok=True)
+        try:
+            with requests.get(url, stream=True) as response:
+                response.raise_for_status()
+                with open(f"{output_path}/{file}", 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            print("File downloaded successfully!")
+        except requests.exceptions.RequestException as e:
+            print("Error downloading the file:", e)
+    else:
+        print('sturm data already downloaded')
 
 # Function to sample Sturm data at given coordinates with progress bar
 def sample_sturm_data(sturm_file, coords):

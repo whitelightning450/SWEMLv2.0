@@ -13,8 +13,9 @@ Model/.ipynb_checkpoints/
 *.tif
 *.tif.xml
 *.tif.aux.xml
+*.tif.ovr
 *.zip
-*.ipynb_checkpoints/
+*.ipynb_checpoints/
 *.nfs*
 *.nc
 *.zarr
