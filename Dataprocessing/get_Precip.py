@@ -14,7 +14,28 @@ ee.Initialize()
 import warnings
 warnings.filterwarnings("ignore")
 
-HOME = os.path.expanduser('~')
+#load access key
+#HOME = os.getcwd()
+HOME = os.chdir('..')
+HOME = os.getcwd()
+#HOME = os.path.expanduser('~')
+KEYPATH = "AWSaccessKeys.csv"
+
+if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
+    ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+
+    #start session
+    SESSION = boto3.Session(
+        aws_access_key_id=ACCESS['Access key ID'][0],
+        aws_secret_access_key=ACCESS['Secret access key'][0],
+    )
+    S3 = SESSION.resource('s3')
+    #AWS BUCKET information
+    BUCKET_NAME = 'national-snow-model'
+    #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
+    BUCKET = S3.Bucket(BUCKET_NAME)
+else:
+    print("no AWS credentials present, skipping")
 
 def GetSeasonalAccumulatedPrecipSingleSite(args):
     Precippath, precip, output_res, lat, lon, cell_id, dates, WYs = args
@@ -85,14 +106,20 @@ def GetSeasonalAccumulatedPrecipSingleSite(args):
 
 def get_precip_threaded(region, output_res, WYs):
     #  #ASO file path
-    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet/"
+    #aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet/"
+    aso_swe_files_folder_path = f"{HOME}/data/ASO/{region}/{output_res}M_SWE_parquet/"
+
     #make directory for data 
-    Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites"
+    # Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites"
+    Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites"
+
     if not os.path.exists(Precippath):
         os.makedirs(Precippath, exist_ok=True)
     
     #load metadata and get site info
-    path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/{region}_metadata.parquet"
+    # path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/{region}_metadata.parquet"
+    path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/{region}_metadata.parquet"
+
     meta = pd.read_parquet(path)
     #reset index because we need cell_id as a column
     meta.reset_index(inplace=True)
@@ -174,11 +201,16 @@ def Make_Precip_DF(region, output_res, threshold):
     print(f"Adding precipitation features to ML dataframe for the {region} region.")
    # try:
     #precip and 
-    Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites/"
-    DFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+#     Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites/"
+#     DFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+
+#     #make precip df path
+#     PrecipDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites/"
+    DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
 
     #make precip df path
-    PrecipDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
     if not os.path.exists(PrecipDFpath):
         os.makedirs(PrecipDFpath, exist_ok=True)
 

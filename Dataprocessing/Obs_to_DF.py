@@ -35,20 +35,27 @@ import warnings; warnings.filterwarnings("ignore")
 import boto3
 
 #load access key
-HOME = os.path.expanduser('~')
-KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
-ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+#HOME = os.getcwd()
+HOME = os.chdir('..')
+HOME = os.getcwd()
+#HOME = os.path.expanduser('~')
+KEYPATH = "AWSaccessKeys.csv"
 
-#start session
-SESSION = boto3.Session(
-    aws_access_key_id=ACCESS['Access key ID'][0],
-    aws_secret_access_key=ACCESS['Secret access key'][0],
-)
-S3 = SESSION.resource('s3')
-#AWS BUCKET information
-BUCKET_NAME = 'national-snow-model'
-BUCKET = S3.Bucket(BUCKET_NAME)
+if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
+    ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
 
+    #start session
+    SESSION = boto3.Session(
+        aws_access_key_id=ACCESS['Access key ID'][0],
+        aws_secret_access_key=ACCESS['Secret access key'][0],
+    )
+    S3 = SESSION.resource('s3')
+    #AWS BUCKET information
+    BUCKET_NAME = 'national-snow-model'
+    #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
+    BUCKET = S3.Bucket(BUCKET_NAME)
+else:
+    print("no AWS credentials present, skipping")
 
 
 #function for processing a single row -  test to see if this works
@@ -126,10 +133,11 @@ def process_single_timestamp(args):
     cols = [
     'cell_id', 'Date', 'swe_m', 'ns_1', 'ns_2', 'ns_3', 'ns_4', 'ns_5', 'ns_6'
     ]
-
+    #display(Obsdf)
     Obsdf = Obsdf[cols]
     table = pa.Table.from_pandas(Obsdf)
     # Parquet with Brotli compression
+    print(f"{obsdf_path}/{timestamp}_ObsDF.parquet")
     pq.write_table(table,f"{obsdf_path}/{timestamp}_ObsDF.parquet", compression='BROTLI')
   
 
@@ -137,16 +145,23 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
 
     print('Connecting site observations with nearest monitoring network obs')
     #get Snotel observations
-    snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
+    # snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data/"
+    snotel_path = f"{HOME}/data/SNOTEL_Data/"
     #Snotelobs_path = f"{snotel_path}ground_measures.parquet"
     Snotelobs_path = f"{snotel_path}ground_measures_dp.parquet"
+    # #nearest snotel path
+    # nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    # #ASO observations
+    # aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
     #nearest snotel path
-    nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
+    nearest_snotel_dict_path = f"{HOME}//data/TrainingDFs/{region}/{output_res}M_Resolution"
     #ASO observations
-    aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
+    aso_swe_files_folder_path = f"{HOME}/data/ASO/{region}/{output_res}M_SWE_parquet"
 
      #Make folder for predictions
-    obsdf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Obsdf"
+    # obsdf_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Obsdf"
+    obsdf_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Obsdf"
+
     if not os.path.exists(obsdf_path):
         os.makedirs(obsdf_path, exist_ok=True)
 
