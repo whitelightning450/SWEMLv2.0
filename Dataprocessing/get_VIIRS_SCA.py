@@ -40,19 +40,28 @@ earthaccess.login(persist=True)
 '''
 
 #load access key
-HOME = os.path.expanduser('~')
-KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
-ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+#HOME = os.getcwd()
+HOME = os.chdir('..')
+HOME = os.getcwd()
+#HOME = os.path.expanduser('~')
+KEYPATH = "AWSaccessKeys.csv"
 
-#start session
-SESSION = boto3.Session(
-    aws_access_key_id=ACCESS['Access key ID'][0],
-    aws_secret_access_key=ACCESS['Secret access key'][0],
-)
-S3 = SESSION.resource('s3')
-#AWS BUCKET information
-BUCKET_NAME = 'national-snow-model'
-BUCKET = S3.Bucket(BUCKET_NAME)
+if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
+    ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
+
+    #start session
+    SESSION = boto3.Session(
+        aws_access_key_id=ACCESS['Access key ID'][0],
+        aws_secret_access_key=ACCESS['Secret access key'][0],
+    )
+    S3 = SESSION.resource('s3')
+    #AWS BUCKET information
+    BUCKET_NAME = 'national-snow-model'
+    #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
+    BUCKET = S3.Bucket(BUCKET_NAME)
+else:
+    print("no AWS credentials present, skipping")
+
 
 
 def get_VIIRS_from_AWS():
@@ -60,17 +69,21 @@ def get_VIIRS_from_AWS():
     years = [2013, 2014, 2015, 2016, 2017, 2018, 2019] #note, likely will have to redo all of these! found error
 
     for year in years:
-        SCA_directory = f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}"
+        # SCA_directory = f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}"
+        SCA_directory = f"{HOME}/data/VIIRS/WY{year}"
 
         if os.path.exists(SCA_directory)== False:
             os.makedirs(SCA_directory)
             print('Getting VIIRS fSCA files')
             key = f"data/VIIRS/WY{year}.zip"            
-            S3.meta.client.download_file(BUCKET_NAME, key,f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}.zip")
-            with zipfile.ZipFile(f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}.zip", 'r') as Z:
+            #S3.meta.client.download_file(BUCKET_NAME, key,f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}.zip")
+            S3.meta.client.download_file(BUCKET_NAME, key,f"{HOME}/data/VIIRS/WY{year}.zip")
+            # with zipfile.ZipFile(f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}.zip", 'r') as Z:
+            with zipfile.ZipFile(f"{HOME}/data/VIIRS/WY{year}.zip", 'r') as Z:
                 for elem in Z.namelist() :
                     Z.extract(elem, f"{SCA_directory}/")
-            os.remove(f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}.zip")
+            #os.remove(f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}.zip")
+            os.remove(f"{HOME}/data/VIIRS/WY{year}.zip")
 
 def augment_SCA_mutliprocessing(region, output_res, threshold):
     """
@@ -84,10 +97,13 @@ def augment_SCA_mutliprocessing(region, output_res, threshold):
     """
     # get list of dataframes dataframe
   
-    GeoObsDF_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/GeoObsDFs" #This may need to be the region
-    ViirsGeoObsDF_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
-    VIIRSdata_path = f"{HOME}/SWEMLv2.0/data/VIIRS"
-
+    # GeoObsDF_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/GeoObsDFs" #This may need to be the region
+    # ViirsGeoObsDF_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    # VIIRSdata_path = f"{HOME}/SWEMLv2.0/data/VIIRS"
+    GeoObsDF_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/GeoObsDFs" #This may need to be the region
+    ViirsGeoObsDF_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    VIIRSdata_path = f"{HOME}/data/VIIRS"
+    
     #check and make directory for VIIRS DFs
     if not os.path.exists(ViirsGeoObsDF_path):
             os.makedirs(ViirsGeoObsDF_path, exist_ok=True)
