@@ -133,10 +133,11 @@ def process_single_timestamp(args):
     cols = [
     'cell_id', 'Date', 'swe_m', 'ns_1', 'ns_2', 'ns_3', 'ns_4', 'ns_5', 'ns_6'
     ]
-
+    #display(Obsdf)
     Obsdf = Obsdf[cols]
     table = pa.Table.from_pandas(Obsdf)
     # Parquet with Brotli compression
+    print(f"{obsdf_path}/{timestamp}_ObsDF.parquet")
     pq.write_table(table,f"{obsdf_path}/{timestamp}_ObsDF.parquet", compression='BROTLI')
   
 

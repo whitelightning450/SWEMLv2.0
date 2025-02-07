@@ -174,18 +174,23 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     aso_swe_files_folder_path = f"{HOME}/data/ASO/{region}/{output_res}M_SWE_parquet"
     snotel_path = f"{HOME}/data/SNOTEL_Data/"
     
+    snotel_file = gpd.read_file('https://raw.githubusercontent.com/egagli/snotel_ccss_stations/main/all_stations.geojson').set_index('code')
+    snotel_file = snotel_file[snotel_file['csvData']==True]
+    snotel_file.reset_index(inplace = True, drop = False)
+    snotel_file.rename(columns={'code':'station_id'}, inplace = True)
     
-    Snotelmeta_path = f"{snotel_path}ground_measures_metadata.parquet"
     
-    try:
-        snotel_file = pd.read_parquet(Snotelmeta_path)
-    except:
-        print("Snotel meta not found, retreiving from AWS S3")
-        if not os.path.exists(snotel_path):
-            os.makedirs(snotel_path, exist_ok=True)
-        key = "NSMv2.0"+Snotelmeta_path.split("SWEMLv2.0",1)[1]       
-        S3.meta.client.download_file(BUCKET_NAME, key,Snotelmeta_path)
-        snotel_file = pd.read_parquet(Snotelmeta_path)
+#     Snotelmeta_path = f"{snotel_path}ground_measures_metadata.parquet"
+    
+#     try:
+#         snotel_file = pd.read_parquet(Snotelmeta_path)
+#     except:
+#         print("Snotel meta not found, retreiving from AWS S3")
+#         if not os.path.exists(snotel_path):
+#             os.makedirs(snotel_path, exist_ok=True)
+#         key = "NSMv2.0"+Snotelmeta_path.split("SWEMLv2.0",1)[1]       
+#         S3.meta.client.download_file(BUCKET_NAME, key,Snotelmeta_path)
+#         snotel_file = pd.read_parquet(Snotelmeta_path)
 
     ASO_meta_loc_DF = pd.DataFrame()
 
@@ -194,8 +199,11 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     #build in method for adding to existing dictionary rather than rerunning for entire region...
     print('Loading all Geospatial prediction/observation files and concatenating into one dataframe')
     for aso_swe_file in tqdm_notebook(os.listdir(aso_swe_files_folder_path)):
-        aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file))
-        ASO_meta_loc_DF = pd.concat([ASO_meta_loc_DF, aso_file])
+        try:
+            aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file))
+            ASO_meta_loc_DF = pd.concat([ASO_meta_loc_DF, aso_file])
+        except:
+            print(f"OSError: Corrupt brotli compressed data for {aso_swe_file}, skipping")
 
     
     print('Identifying unique sites to create geophysical information dataframe') 
