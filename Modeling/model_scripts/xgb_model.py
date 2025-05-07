@@ -21,6 +21,8 @@ from sklearn.model_selection import RepeatedKFold
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import train_test_split
 from matplotlib import pyplot
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # deep learning packages
 import torch
@@ -35,7 +37,10 @@ sys.path.insert(0, '../..') #sys allows for the .ipynb file to connect to the sh
 from model_scripts import Simple_Eval
 
 #load access key
-HOME = os.path.expanduser('~')
+#HOME = os.path.expanduser('~')
+HOME = os.getcwd()
+# HOME = os.chdir('../..')
+# HOME = os.getcwd()
 KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
 ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
 
@@ -79,6 +84,8 @@ class XGBoostRegressorCV:
         print(f"Best RMSE: {grid_search.best_score_}")
         #save the model features
         pkl.dump(grid_search, open(self.path, "wb")) 
+        
+        return grid_search.best_params_
 
     def train(self, input_columns, X, y, parameters={}):
         """Trains the model using the best hyperparameters found."""
@@ -143,7 +150,7 @@ def XGB_Train(model_path, input_columns, x_train, y_train, tries, hyperparameter
         new_data_len = int(len(x_train) * perc_data) #determine hyperprams using 25% of the data
         print(f"Tuning hyperparametetrs on {perc_data*100}% of training data")
         x_hyper, y_hyper = x_train.iloc[:new_data_len], y_train.iloc[:new_data_len]
-        xgboost_model.tune_hyperparameters(x_hyper, y_hyper)
+        best_params = xgboost_model.tune_hyperparameters(x_hyper, y_hyper)
         xgboost_model.evaluate(x_train.iloc[:new_data_len], y_train.iloc[:new_data_len])
         print('Training model with optimized hyperparameters')
         xgboost_model.train(input_columns, x_train, y_train)
@@ -153,6 +160,7 @@ def XGB_Train(model_path, input_columns, x_train, y_train, tries, hyperparameter
         pkl.dump(xgboost_model, open(f"{model_path}/best_model.pkl", "wb"))  
 
     print('Run is Done!' + "Run Time:" + " %s seconds " % (time.time() - start_time))
+    return best_params
 
 
 def XGB_Predict(model_path, modelname, x_test, y_test, Use_fSCA_Threshold):
@@ -185,4 +193,8 @@ def XGB_Predict(model_path, modelname, x_test, y_test, Use_fSCA_Threshold):
     #     pkl.dump(Preds_Dict, handle, protocol=pkl.HIGHEST_PROTOCOL)
 
     return PredDF
-  
+
+def XGB_Perf_Save(df, path, name):
+    table = pa.Table.from_pandas(df)
+    # Parquet with Brotli compression
+    pq.write_table(table, f"{path}/{name}.parquet", compression='BROTLI')

@@ -67,7 +67,7 @@ def load_Predictions(Region_list):
 def parityplot(EvalDF, savfig, region, watershed, date):   
 
     Title = f"SWEMLv2.0 Model Performance {date} \n {watershed} River Basin, {region}"
-    figname = f"./Figures/{region}_{watershed}_parity_{date}.png"
+    figname = f"./SWEMLv2.0/Evaluation/Figures/{region}_{watershed}_parity_{date}.png"
     
     #Plot the results in a parity plot
     sns.set(style='ticks')
@@ -127,7 +127,7 @@ def parityplot(EvalDF, savfig, region, watershed, date):
 #Plot the error/prediction compared to different variables
 def Model_Vs(EvalDF,metric,model_output,savfig, region, watershed, date):   
 
-    figname = f"./Figures/{region}_{watershed}_{metric}_{model_output}_{date}.png"
+    figname = f"./SWEMLv2.0/Evaluation/Figures/{region}_{watershed}_{metric}_{model_output}_{date}.png"
         
     #Calculate error
     EvalDF['error'] = EvalDF['y_test'] - EvalDF['y_pred']

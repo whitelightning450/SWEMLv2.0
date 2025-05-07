@@ -251,30 +251,6 @@ class ASODataProcessing:
             print(f"An error occurred: {str(e)}")
             return None
         
-
-    # def process_single_ASO_file(args):
-        
-    #     folder_path, tiff_filename, output_res, region = args
-    #     # Open the TIFF file
-    #     tiff_filepath = os.path.join(folder_path, tiff_filename)
-    #     df = ASODataProcessing.processing_tiff(region, tiff_filepath, dir, output_res)
-
-    #     if df is not None:
-    #         # Get the date from the TIFF filename
-    #         date = os.path.splitext(tiff_filename)[0].split("_")[-1]
-
-    #         # Define the parquet filename and folder
-    #         parquet_filename = f"ASO_{output_res}M_SWE_{date}.parquet"
-    #         parquet_folder = os.path.join(dir, f"{region}/{output_res}M_SWE_parquet")
-    #         os.makedirs(parquet_folder, exist_ok=True)
-    #         parquet_filepath = os.path.join(parquet_folder, parquet_filename)
-
-    #         # Save the DataFrame as a parquet file
-    #         #Convert DataFrame to Apache Arrow Table
-    #         table = pa.Table.from_pandas(df)
-    #         # Parquet with Brotli compression
-    #         pq.write_table(table, parquet_filepath, compression='BROTLI')
-        
         
     def processing_tiff(self, input_file, output_path, output_res, region):
         try:
@@ -428,6 +404,280 @@ class ASODataProcessing:
                             except:
                                 # redo function to convert tiff to parquet
                                 self.process_single_ASO_file(args)
+                                
+                                
+class ASODataProcessing_v2: #Revised script to work with 2020-2024 data put into Water Years rather than regions
+    
+    @staticmethod
+    def processing_tiff(WY, input_file, output_path, output_res):
+        try:
+            print('Using function file')
+            #code block for converting input file string to date to match WY2013-2019 format
+            #2020-2024 is formatted differently
+            if WY in ['2020', '2021', '2022', '2023', '2024']:
+
+                if input_file[-7:-4] == '50m':
+                    date = os.path.splitext(input_file)[0].split("_")[-3]
+                if input_file[-7:-4] == 'agg':
+                    date = os.path.splitext(input_file)[0].split("_")[-4]
+
+                if '-' in date:
+                    date = date.split("-")[0]
+
+                yr = date[:4]
+                m = str(datetime.strptime(date[4:7], "%b").month)
+                d = date[7:]
+
+                if len(m) == 1:
+                    m = f"0{m}"
+                if len(d) == 1:
+                    d = f"0{d}"
+
+                date = f"{yr}{m}{d}"
+
+                #get location
+                loc = os.path.splitext(input_file)[0].split("_")[1]
+            #formatting for <2020
+            else:
+                date = os.path.splitext(input_file)[0].split("_")[-1]
+                loc = os.path.splitext(input_file)[0].split("_")[-2]
+            # Define the output file path
+            output_folder = os.path.join(output_path, f"{WY}/ASO_Processed_{output_res}M_tif")
+            os.makedirs(output_folder, exist_ok=True)
+            output_file = os.path.join(output_folder, f"ASO_{loc}_{output_res}M_{date}.tif")
+    
+            ds = gdal.Open(input_file)
+            if ds is None:
+                print(f"Failed to open '{input_file}'. Make sure the file is a valid GeoTIFF file.")
+                return None
+            
+            # Reproject and resample, the Res # needs to be in degrees, ~111,111m to 1 degree
+            Res = output_res/111111
+            gdal.Warp(output_file, ds, dstSRS="EPSG:4326", xRes=Res, yRes=-Res, resampleAlg="bilinear")
+            print('gdal done')
+            # Read the processed TIFF file using rasterio
+            rds = rxr.open_rasterio(output_file)
+            print('rds made')
+            rds = rds.squeeze().drop("spatial_ref").drop("band")
+            rds.name = "data"
+            df = rds.to_dataframe().reset_index()
+            return df
+    
+        except Exception as e:
+            print(f"An error occurred: {str(e)}")
+            return None
+        
+        
+    def processing_tiff(self, input_file, output_path, output_res, WY):
+        try:
+            #code block for converting input file string to date to match WY2013-2019 format
+                   #2020-2024 is formatted differently
+            if WY in ['2020', '2021', '2022', '2023', '2024']:
+
+                if input_file[-7:-4] == '50m':
+                    date = os.path.splitext(input_file)[0].split("_")[-3]
+                if input_file[-7:-4] == 'agg':
+                    date = os.path.splitext(input_file)[0].split("_")[-4]
+
+                if '-' in date:
+                    date = date.split("-")[0]
+
+                yr = date[:4]
+                m = str(datetime.strptime(date[4:7], "%b").month)
+                d = date[7:]
+
+                if len(m) == 1:
+                    m = f"0{m}"
+                if len(d) == 1:
+                    d = f"0{d}"
+
+                date = f"{yr}{m}{d}"
+
+                #get location
+                loc = os.path.splitext(input_file)[0].split("_")[1]
+            #formatting for <2020
+            else:
+                date = os.path.splitext(input_file)[0].split("_")[-1]
+                loc = os.path.splitext(input_file)[0].split("_")[-2]
+
+            
+            # Define the output file path
+            output_folder = os.path.join(output_path, f"{WY}/Processed_{output_res}M_SWE")
+            os.makedirs(output_folder, exist_ok=True)
+            output_file = os.path.join(output_folder, f"ASO_{loc}_{output_res}M_{date}.tif")
+            
+
+            ds = gdal.Open(input_file)
+            if ds is None:
+                print(f"Failed to open '{input_file}'. Make sure the file is a valid GeoTIFF file.")
+                return None
+            
+            # Reproject and resample, the Res # needs to be in degrees 0.00009 is equivalent to ~100 m
+            Res = output_res/111111
+            
+            gdal.Warp(output_file, ds, dstSRS="EPSG:4326", xRes=Res, yRes=-Res, resampleAlg="bilinear")
+
+            # Read the processed TIFF file using rasterio
+            rds = rxr.open_rasterio(output_file)
+            rds = rds.squeeze().drop("spatial_ref").drop("band")
+            rds.name = "data"
+            df = rds.to_dataframe().reset_index()
+            return df
+        
+        except Exception as e:
+            print(f"An error occurred: {str(e)}")
+            return None
+    
+    def average_duplicates(self, cell_id, aso_file, siteave_dic):
+        sitex = aso_file[aso_file['cell_id'] == cell_id]
+        mean_lat = np.round(np.mean(sitex['cen_lat']),3)
+        mean_lon = np.round(np.mean(sitex['cen_lon']),3)
+        mean_swe = np.round(np.mean(sitex['swe_m']),2)
+
+        tempdic = {'cell_id': cell_id,
+                'cen_lat': mean_lat,
+                'cen_lon': mean_lon,
+                'swe_m': mean_swe
+        }
+
+        sitedf = pd.DataFrame(tempdic, index = [cell_id])
+        siteave_dic[cell_id] = sitedf
+            
+
+    def process_single_ASO_file(self, args):
+            
+        folder_path, tiff_filename, output_res, WY, dir = args
+        # Open the TIFF file
+        tiff_filepath = os.path.join(folder_path, tiff_filename)
+        df = self.processing_tiff(tiff_filepath, dir, output_res, WY)
+        
+        #2020-2024 is formatted differently
+        if WY in ['2020', '2021', '2022', '2023', '2024']:
+
+            if tiff_filename[-7:-4] == '50m':
+                date = os.path.splitext(tiff_filename)[0].split("_")[-3]
+            if tiff_filename[-7:-4] == 'agg':
+                date = os.path.splitext(tiff_filename)[0].split("_")[-4]
+
+            if '-' in date:
+                date = date.split("-")[0]
+
+            yr = date[:4]
+            m = str(datetime.strptime(date[4:7], "%b").month)
+            d = date[7:]
+
+            if len(m) == 1:
+                m = f"0{m}"
+            if len(d) == 1:
+                d = f"0{d}"
+
+            date = f"{yr}{m}{d}"
+
+            #get location
+            loc = os.path.splitext(tiff_filename)[0].split("_")[1]
+        #formatting for <2020
+        else:
+            date = os.path.splitext(tiff_filename)[0].split("_")[-1]
+            loc = os.path.splitext(tiff_filename)[0].split("_")[-2]
+                
+
+        #process file for more efficient saving and fix column headers
+        df.rename(columns = {'x': 'cen_lon', 'y':'cen_lat', 'data':'swe_m'}, inplace = True)
+        df = df[df['swe_m'] >=0]
+        #make cell_id for each site
+        df['cell_id'] = df.apply(lambda row: self.make_cell_id(WY, output_res, row['cen_lat'], row['cen_lon']), axis=1)
+
+        #get unique cell ids
+        cell_ids = df.cell_id.unique()
+
+        if len(df) > len(cell_ids):
+            siteave_dic = {}
+            print(f"Taking {len(df)} observations down to {len(cell_ids)} unique cell ids and taking the spatial average to get {output_res} m resolution for timestep {date}")
+            [self.average_duplicates(cell_id, df, siteave_dic) for cell_id in cell_ids]
+            df = pd.concat(siteave_dic)
+
+        if df is not None:
+            # Define the parquet filename and folder
+            parquet_filename = f"ASO_{loc}_{output_res}M_SWE_{date}.parquet"
+            parquet_folder = os.path.join(dir, f"{WY}/{output_res}M_SWE_parquet")
+            os.makedirs(parquet_folder, exist_ok=True)
+            parquet_filepath = os.path.join(parquet_folder, parquet_filename)
+
+            # Save the DataFrame as a parquet file
+            #Convert DataFrame to Apache Arrow Table
+            table = pa.Table.from_pandas(df)
+            # Parquet with Brotli compression
+            pq.write_table(table, parquet_filepath, compression='BROTLI')
+        
+            
+    def convert_tiff_to_parquet_multiprocess(self, input_folder, output_res, WY):
+
+        print('Converting .tif to parquet')
+        # dir = f"{HOME}/SWEMLv2.0/data/ASO/"
+        dir = f"{HOME}/data/ASO/"
+        folder_path = os.path.join(dir, input_folder)
+        
+        # Check if the folder exists and is not empty
+        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+            print(f"The folder '{folder_path}' does not exist.")
+            return
+        
+        if not os.listdir(folder_path):
+            print(f"The folder '{input_folder}' is empty.")
+            return
+
+        tiff_files = [filename for filename in os.listdir(folder_path) if filename.endswith(".tif")]
+        print(f"Converting {len(tiff_files)} ASO tif files to parquet")
+        
+        # Create parquet files from TIFF files
+        with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+        # Start the load operations and mark each future with its process function
+            [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, WY, dir)) for i in tqdm_notebook(range(len(tiff_files)))]
+
+        print('Checking to make sure all files successfully converted...')
+        parquet_folder = os.path.join(dir, f"{WY}/{output_res}M_SWE_parquet")
+        for parquet_file in tqdm_notebook(os.listdir(parquet_folder)):
+            try:
+                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
+            except:# add x number of attempts
+                print(f"Bad file conversion for {parquet_file}, attempting to reprocess")
+                tiff_file = f"ASO_50M_SWE_USCACE_{parquet_file[-16:-8]}.tif"
+                print(tiff_file)
+                # redo function to convert tiff to parquet
+                args = folder_path, tiff_file, output_res, WY, dir
+                self.process_single_ASO_file(args)
+                try:
+                    print('Attempt 2')
+                    # try to reloade again
+                    aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
+                    print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
+                except:
+                    # redo function to convert tiff to parquet
+                    self.process_single_ASO_file(args)
+                    try:
+                        print('Attempt 3')
+                        # try to reloade again
+                        aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
+                        print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
+                    except:
+                        # redo function to convert tiff to parquet
+                        self.process_single_ASO_file(args)
+                        try:
+                            print('Attempt 4')
+                            # try to reloade again
+                            aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
+                            print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
+                        except:
+                            # redo function to convert tiff to parquet
+                            self.process_single_ASO_file(args)
+                            try:
+                                print('Attempt 5')
+                                # try to reloade again
+                                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
+                                print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
+                            except:
+                                # redo function to convert tiff to parquet
+                                self.process_single_ASO_file(args)
 
                            
                 
@@ -443,6 +693,14 @@ class ASODataProcessing:
         cen_lat = round(cen_lat,3) #rounding to 3 past the decimal, 100m =~0.001 degreest
         cen_lon = round(cen_lon,3)
         cell_id = f"{region}_{output_res}M_{cen_lat}_{cen_lon}"
+        return cell_id
+    
+        #make cell_id
+    def make_cell_id_v2(self,WY, output_res, cen_lat, cen_lon):
+        #round lat/long to similar sites, may redue file size...
+        cen_lat = round(cen_lat,3) #rounding to 3 past the decimal, 100m =~0.001 degreest
+        cen_lon = round(cen_lon,3)
+        cell_id = f"{WY}_{output_res}M_{cen_lat}_{cen_lon}"
         return cell_id
 
     
