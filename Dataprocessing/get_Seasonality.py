@@ -7,6 +7,7 @@ import concurrent.futures as cf
 import os
 import warnings
 import pickle as pkl
+import boto3
 warnings.filterwarnings("ignore")
 
 #load access key

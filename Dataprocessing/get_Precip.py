@@ -9,6 +9,7 @@ import concurrent.futures as cf
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pickle as pkl
+import boto3
 ee.Authenticate()
 ee.Initialize()
 import warnings

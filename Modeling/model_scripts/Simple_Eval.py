@@ -9,7 +9,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.dates import MonthLocator, DateFormatter
 import os
-HOME = os.path.expanduser('~')
+#HOME = os.path.expanduser('~')
+HOME = os.getcwd()
+HOME = os.chdir('../..')
+HOME = os.getcwd()
 
 def Parity_Evaluation_Plots(DF, regionlist, modelname, savfig, figname):
 

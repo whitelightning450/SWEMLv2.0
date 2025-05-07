@@ -48,7 +48,10 @@ import s3fs
 from model_scripts import Simple_Eval
 
 #load access key
-HOME = os.path.expanduser('~')
+#HOME = os.path.expanduser('~')
+# HOME = os.getcwd()
+# HOME = os.chdir('..')
+HOME = os.getcwd()
 KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
 ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
 
