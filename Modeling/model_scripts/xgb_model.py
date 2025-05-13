@@ -149,10 +149,12 @@ def XGB_Train(model_path, input_columns, x_train, y_train, tries, hyperparameter
         xgboost_model = XGBoostRegressorCV(hyperparameters, f"{model_path}/best_model_hyperparameters.pkl")
         new_data_len = int(len(x_train) * perc_data) #determine hyperprams using 25% of the data
         print(f"Tuning hyperparametetrs on {perc_data*100}% of training data")
+        
         x_hyper, y_hyper = x_train.iloc[:new_data_len], y_train.iloc[:new_data_len]
         best_params = xgboost_model.tune_hyperparameters(x_hyper, y_hyper)
         xgboost_model.evaluate(x_train.iloc[:new_data_len], y_train.iloc[:new_data_len])
         print('Training model with optimized hyperparameters')
+        
         xgboost_model.train(input_columns, x_train, y_train)
         print('Saving Model')
         

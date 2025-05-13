@@ -154,7 +154,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     # #ASO observations
     # aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
     #nearest snotel path
-    nearest_snotel_dict_path = f"{HOME}//data/TrainingDFs/{region}/{output_res}M_Resolution"
+    nearest_snotel_dict_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
     #ASO observations
     aso_swe_files_folder_path = f"{HOME}/data/ASO/{region}/{output_res}M_SWE_parquet"
 

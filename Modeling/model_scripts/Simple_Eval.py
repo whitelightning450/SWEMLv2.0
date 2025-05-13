@@ -38,7 +38,8 @@ def Parity_Evaluation_Plots(DF, regionlist, modelname, savfig, figname):
     for region in np.arange(0, len(regionlist),1):
         regiondf = DF[DF['region']==regionlist[region]]
         ax.scatter(regiondf['ASO_swe_cm'], regiondf[pred_col],
-                   c=colors[region], alpha=0.35, label=regionlist[region])
+                   # c=colors[region], 
+                   alpha=0.35, label=regionlist[region])
 
      # Add some parameters.
     ax.set_title('SWE Predictions', fontsize=fontsize)

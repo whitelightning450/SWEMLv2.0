@@ -101,7 +101,7 @@ def GetSeasonalAccumulatedPrecipSingleSite(args):
         table = pa.Table.from_pandas(df)
         # Parquet with Brotli compression
         pq.write_table(table, f"{Precippath}/NLDAS_PPT_{cell_id}.parquet", compression='BROTLI')
-        #print(f"{cell_id} done...")
+       # print(f"{cell_id} done...")
     
     
 
@@ -128,6 +128,7 @@ def get_precip_threaded(region, output_res, WYs):
     #set water year start/end dates based on ASO flights for the end date
     aso_swe_files = [filename for filename in os.listdir(aso_swe_files_folder_path)]
     aso_swe_files.sort()
+    print(aso_swe_files[0])
     startyear = int(aso_swe_files[0][-16:-12])-1
     startdate = f"{startyear}-09-30"
 
@@ -173,9 +174,9 @@ def get_precip_threaded(region, output_res, WYs):
         {executor.submit(GetSeasonalAccumulatedPrecipSingleSite, (Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs)):
                 i for i in tqdm(range(nsites))}
         
-    # for i in tqdm(range(nsites)): #trying for loop bc multithreader not working....
-    #     args = Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs
-    #     GetSeasonalAccumulatedPrecipSingleSite(args)
+#     for i in tqdm(range(nsites)): #trying for loop bc multithreader not working....
+#         args = Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs
+#         GetSeasonalAccumulatedPrecipSingleSite(args)
     
     
     print(f"Job complete for getting precipiation datdata for WY{year}, processing dataframes for file storage")
@@ -224,8 +225,8 @@ def Make_Precip_DF(region, output_res, threshold):
         [executor.submit(single_date_add_precip, (DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region)) for geofile in GeoObsDF_files]
     # for geofile in GeoObsDF_files:
     #     single_date_add_precip((DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region))
-    # except:
-    #     print(f"No ASO observations/dataframe to add NLDAS precipitation to in {region}, skipping")
+#     except:
+#         print(f"No ASO observations/dataframe to add NLDAS precipitation to in {region}, skipping")
        
 
 
