@@ -95,6 +95,14 @@ def data_clean(df, regionlist): #add region to dataframe
             value = 250
             bad_df = df[(df['region'] == region) & (df['swe_cm'] > 250)] # This is ~100" of SWE
             print(f"{len(bad_high_ASO_data)} locations/timesteps show SWE greater than a realistic value ({value} cm) in the {region} domain")
+
+            
+        if region in ['2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024']:
+            value = 300
+            bad_df = df[(df['region'] == region) & (df['swe_cm'] > value)] # This is ~150" of SWE
+            print(f"{len(bad_high_ASO_data)} locations/timesteps show SWE greater than a realistic value ({value} cm) in the {region} domain")
+
+
         
         bad_high_ASO_data = pd.concat([bad_high_ASO_data, bad_df])
 

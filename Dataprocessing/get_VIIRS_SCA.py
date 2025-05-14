@@ -85,7 +85,7 @@ def get_VIIRS_from_AWS():
             #os.remove(f"{HOME}/SWEMLv2.0/data/VIIRS/WY{year}.zip")
             os.remove(f"{HOME}/data/VIIRS/WY{year}.zip")
 
-def augment_SCA_mutliprocessing(region, output_res, threshold):
+def augment_SCA_multiprocessing(region, output_res, threshold):
     """
         Augments the region's dataframe with SCA data.
 
@@ -102,7 +102,7 @@ def augment_SCA_mutliprocessing(region, output_res, threshold):
     # VIIRSdata_path = f"{HOME}/SWEMLv2.0/data/VIIRS"
     GeoObsDF_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/GeoObsDFs" #This may need to be the region
     ViirsGeoObsDF_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
-    VIIRSdata_path = f"{HOME}/data/VIIRS"
+    VIIRSdata_path = f"{HOME}/data/VIIRS"  #/WY{region}"
     
     #check and make directory for VIIRS DFs
     if not os.path.exists(ViirsGeoObsDF_path):
@@ -142,6 +142,8 @@ def single_df_VIIRS(args):
     geoRegionDF = gpd.GeoDataFrame(region_df, geometry=gpd.points_from_xy(region_df.cen_lon, region_df.cen_lat,
                                                                             crs="EPSG:4326"))  # Convert to GeoDataFrame
     date = geoRegionDF.Date.unique().strftime('%Y-%m-%d')[0]
+    
+    #print(geoRegionDF.total_bounds, SCA_folder, date)
 
     try:
         # Fetch granules
@@ -374,7 +376,7 @@ def calculateGranuleExtent(boundingBox: list[float, float, float, float],
 
     # Get params situated
     datasetName = "VNP10A1F"  # NPP-SUOMI VIIRS, but JPSS1 VIIRS also exists
-    version = "2" if day > datetime(2018, 1, 1) else "1"  # TODO v1 supports 2013-on, but v2 currently breaks <2018??? 
+    version = "2" #if day > datetime(2018, 1, 1) else "1"  # Looks like as of 5-10-2025 that v2 works for < 2018 now
     #print('VIIRS version: ', version)
     query = (ea.granule_query()
                 .short_name(datasetName)
@@ -384,7 +386,7 @@ def calculateGranuleExtent(boundingBox: list[float, float, float, float],
                 # Grab one day's worth of data, we only care about spatial extent
                 )
     results = query.get(100)  # The Western CONUS is usually 7, so this is plenty
-
+    #print(results)
     cells = []
     for result in results:
         geometry = shapely.geometry.Polygon(
@@ -398,6 +400,5 @@ def calculateGranuleExtent(boundingBox: list[float, float, float, float],
             "geometry": geometry
         }
         cells.append(cell)
-
     geo = gpd.GeoDataFrame(cells, geometry="geometry", crs="EPSG:4326")
     return geo

@@ -64,10 +64,10 @@ def load_Predictions(Region_list):
 
 
 #Function to convert predictions into parity plot plus evaluation metrics
-def parityplot(EvalDF, savfig, region, watershed, date):   
+def parityplot(EvalDF, savfig, watershed, date, sim):   
 
-    Title = f"SWEMLv2.0 Model Performance {date} \n {watershed} River Basin, {region}"
-    figname = f"./SWEMLv2.0/Evaluation/Figures/{region}_{watershed}_parity_{date}.png"
+    Title = f"SWEMLv2.0 Model Performance {date} \n {watershed} River Basin, {sim}"
+    figname = f"./SWEMLv2.0/Evaluation/Figures/_{watershed}_parity_{date}_{sim}.png"
     
     #Plot the results in a parity plot
     sns.set(style='ticks')
@@ -125,9 +125,9 @@ def parityplot(EvalDF, savfig, region, watershed, date):
     
     
 #Plot the error/prediction compared to different variables
-def Model_Vs(EvalDF,metric,model_output,savfig, region, watershed, date):   
+def Model_Vs(EvalDF,metric,model_output,savfig, watershed, date, sim):   
 
-    figname = f"./SWEMLv2.0/Evaluation/Figures/{region}_{watershed}_{metric}_{model_output}_{date}.png"
+    figname = f"./SWEMLv2.0/Evaluation/Figures/{watershed}_{metric}_{model_output}_{date}_{sim}.png"
         
     #Calculate error
     EvalDF['error'] = EvalDF['y_test'] - EvalDF['y_pred']
@@ -169,7 +169,7 @@ def Model_Vs(EvalDF,metric,model_output,savfig, region, watershed, date):
     if metric == 'sturm_value':
         xlabel = 'Sturm Snow Classification'
 
-    Title = f"{model_output} by {xlabel} {date} \n {watershed} River Basin, {region}"
+    Title = f"{model_output} by {xlabel} {date} \n {watershed} River Basin, {sim}"
     
     sns.set(style='ticks')
     sns.relplot(data=EvalDF, x=metric, y=Y, aspect=1.61)
