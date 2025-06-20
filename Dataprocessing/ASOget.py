@@ -63,7 +63,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 
-import NSIDC_Data
+import utils.NSIDC_Data
 import netrc
 import base64
 import getpass
@@ -75,11 +75,8 @@ earthaccess.login(persist=True)
 '''
 
 #load access key
-#HOME = os.getcwd()
-HOME = os.chdir('..')
 HOME = os.getcwd()
-#HOME = os.path.expanduser('~')
-KEYPATH = "AWSaccessKeys.csv"
+KEYPATH = "utils/AWSaccessKeys.csv"
 
 if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
@@ -94,9 +91,9 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     BUCKET_NAME = 'national-snow-model'
     #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
     BUCKET = S3.Bucket(BUCKET_NAME)
+    print('AWS access keys loaded')
 else:
-    print("no AWS credentials present, skipping")
-
+    print(f"no AWS credentials present, skipping, {HOME}/{KEYPATH}")
 
 
 class ASODataTool:
@@ -306,7 +303,7 @@ class ASODataProcessing:
             ymin = np.float64(np.min(rds_4326['y']))
             ymax = np.float64(np.max(rds_4326['y']))
             rds_bbox = [xmin,ymin,xmax,ymax]
-            
+
             #check if corners of file extent are within region bbox:
             if ((xmin > BBox[0] and xmin < BBox[2]) or (xmax > BBox[0] and xmax < BBox[2])):
                 if ((ymin > BBox[1] and ymin < BBox[3]) or (ymax > BBox[1] and ymax < BBox[3])):
