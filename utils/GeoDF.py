@@ -93,7 +93,7 @@ else:
     
 #set multiprocessing limits
 CPUS = len(os.sched_getaffinity(0))
-CPUS = (CPUS/2)-2
+CPUS = int((CPUS/2)-2)
     
 
 def row_snotel(row, distance_cache, nearest_snotel, snotel_gdf, n):
