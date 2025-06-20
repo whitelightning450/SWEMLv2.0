@@ -42,6 +42,10 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     BUCKET = S3.Bucket(BUCKET_NAME)
 else:
     print(f"no AWS credentials present, {HOME}/{KEYPATH}")
+
+    #set multiprocessing limits
+CPUS = len(os.sched_getaffinity(0))
+CPUS = (CPUS/2)-2
     
 #set home to the head of the SWEMLv2.0 directory
 
