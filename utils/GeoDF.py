@@ -71,11 +71,9 @@ earthaccess.login(persist=True)
 '''
 
 #load access key
-#HOME = os.getcwd()
-HOME = os.chdir('..')
 HOME = os.getcwd()
-#HOME = os.path.expanduser('~')
-KEYPATH = "AWSaccessKeys.csv"
+KEYPATH = "utils/AWSaccessKeys.csv"
+
 
 if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
@@ -92,6 +90,7 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     BUCKET = S3.Bucket(BUCKET_NAME)
 else:
     print("no AWS credentials present, skipping")
+    
 
 def row_snotel(row, distance_cache, nearest_snotel, snotel_gdf, n):
     cell_id = row.name

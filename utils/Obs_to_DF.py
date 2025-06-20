@@ -35,11 +35,9 @@ import warnings; warnings.filterwarnings("ignore")
 import boto3
 
 #load access key
-#HOME = os.getcwd()
-HOME = os.chdir('..')
 HOME = os.getcwd()
-#HOME = os.path.expanduser('~')
-KEYPATH = "AWSaccessKeys.csv"
+KEYPATH = "utils/AWSaccessKeys.csv"
+
 
 if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
@@ -55,8 +53,8 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
     BUCKET = S3.Bucket(BUCKET_NAME)
 else:
-    print("no AWS credentials present, skipping")
-
+    print(f"no AWS credentials present, {HOME}/{KEYPATH}")
+    
 
 #function for processing a single row -  test to see if this works
 def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data):
@@ -237,7 +235,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     aso_swe_files.sort()
     Obsdf = pd.DataFrame()
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
-    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+    with cf.ProcessPoolExecutor(max_workers=6) as executor: #changed from none to 6 as it was overloading the cpu
         # Start the load operations and mark each future with its process function
         [executor.submit(process_single_timestamp, (aso_swe_files_folder_path, aso_swe_files[i], new_column_names, snotel_data, nearest_snotel, Obsdf, obsdf_path,output_res)) for i in tqdm(range(len(aso_swe_files)))]
 

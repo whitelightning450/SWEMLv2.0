@@ -2,14 +2,13 @@ import os
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-import sturm_processer as stpro
+#import sturm_processer as stpro
 from tqdm import tqdm
 import rasterio
 import subprocess
 import requests
 
 #set home directory
-HOME = os.chdir('..')
 HOME = os.getcwd()
 
 def get_Sturm_data():

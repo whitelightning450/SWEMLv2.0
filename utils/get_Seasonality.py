@@ -11,9 +11,9 @@ import boto3
 warnings.filterwarnings("ignore")
 
 #load access key
-HOME = os.chdir('..')
 HOME = os.getcwd()
-KEYPATH = "AWSaccessKeys.csv"
+KEYPATH = "utils/AWSaccessKeys.csv"
+
 
 if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
@@ -29,7 +29,8 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
     BUCKET = S3.Bucket(BUCKET_NAME)
 else:
-    print("no AWS credentials present, skipping")
+    print(f"no AWS credentials present, {HOME}/{KEYPATH}")
+    
 
 # creat Seasonality features
 #begin with day of year starting from October 1st

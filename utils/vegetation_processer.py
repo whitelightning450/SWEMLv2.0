@@ -9,7 +9,6 @@ import requests
 import zipfile
 
 #set home directory
-HOME = os.chdir('..')
 HOME = os.getcwd()
 
 def get_data(url, output_path, file):

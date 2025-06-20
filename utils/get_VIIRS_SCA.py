@@ -24,7 +24,7 @@ import rioxarray as rxr
 from rioxarray.merge import merge_arrays
 import rasterstats as rs
 import earthaccess as ea
-from nsidc_fetch import download, format_date, format_boundingbox
+from utils.nsidc_fetch import download, format_date, format_boundingbox
 
 
 import glob
@@ -40,11 +40,9 @@ earthaccess.login(persist=True)
 '''
 
 #load access key
-#HOME = os.getcwd()
-HOME = os.chdir('..')
 HOME = os.getcwd()
-#HOME = os.path.expanduser('~')
-KEYPATH = "AWSaccessKeys.csv"
+KEYPATH = "utils/AWSaccessKeys.csv"
+
 
 if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
@@ -60,8 +58,7 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
     BUCKET = S3.Bucket(BUCKET_NAME)
 else:
-    print("no AWS credentials present, skipping")
-
+    print(f"no AWS credentials present, {HOME}/{KEYPATH}")
 
 
 def get_VIIRS_from_AWS():
@@ -132,7 +129,7 @@ def single_df_VIIRS(args):
     GeoObsDF_file, GeoObsDF_path,  SCA_folder, ViirsGeoObsDF_path,threshold, output_res = args
    
     timestamp = GeoObsDF_file.split('_')[-1].split('.')[0]
-    print(timestamp)
+    print(f"{timestamp}, ")
 
     region_df = pd.read_parquet(os.path.join(GeoObsDF_path, GeoObsDF_file))
     #round lat/long, literally no need for any higher spatial resolution than 0.001 degrees, as this is ~100 m

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import ee #pip install earthengine-api
-import EE_funcs
+import utils.EE_funcs
 import os
 from tqdm import tqdm
 from tqdm.notebook import tqdm_notebook
@@ -16,11 +16,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 #load access key
-#HOME = os.getcwd()
-HOME = os.chdir('..')
 HOME = os.getcwd()
-#HOME = os.path.expanduser('~')
-KEYPATH = "AWSaccessKeys.csv"
+KEYPATH = "utils/AWSaccessKeys.csv"
 
 if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
@@ -36,7 +33,8 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     #S3 = boto3.resource('S3', config=Config(signature_version=UNSIGNED))
     BUCKET = S3.Bucket(BUCKET_NAME)
 else:
-    print("no AWS credentials present, skipping")
+    print(f"no AWS credentials present, {HOME}/{KEYPATH}")
+    
 
 def GetSeasonalAccumulatedPrecipSingleSite(args):
     Precippath, precip, output_res, lat, lon, cell_id, dates, WYs = args
