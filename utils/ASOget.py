@@ -94,6 +94,10 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     print('AWS access keys loaded')
 else:
     print(f"no AWS credentials present, skipping, {HOME}/{KEYPATH}")
+    
+#set multiprocessing limits
+CPUS = len(os.sched_getaffinity(0))
+CPUS = (CPUS/2)-2
 
 
 class ASODataTool:
@@ -389,7 +393,7 @@ class ASODataProcessing:
         print(f"Converting {len(tiff_files)} ASO tif files to parquet")
         
         # Create parquet files from TIFF files
-        with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+        with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
         # Start the load operations and mark each future with its process function
             [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, region, dir)) for i in tqdm_notebook(range(len(tiff_files)))]
 
@@ -663,7 +667,7 @@ class ASODataProcessing_v2: #Revised script to work with 2020-2024 data put into
         print(f"Converting {len(tiff_files)} ASO tif files to parquet")
         
         # Create parquet files from TIFF files
-        with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+        with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
         # Start the load operations and mark each future with its process function
             [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, WY, dir)) for i in tqdm_notebook(range(len(tiff_files)))]
 

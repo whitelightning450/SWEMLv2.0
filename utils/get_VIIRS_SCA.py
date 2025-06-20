@@ -59,6 +59,10 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     BUCKET = S3.Bucket(BUCKET_NAME)
 else:
     print(f"no AWS credentials present, {HOME}/{KEYPATH}")
+    
+#set multiprocessing limits
+CPUS = len(os.sched_getaffinity(0))
+CPUS = (CPUS/2)-2
 
 
 def get_VIIRS_from_AWS():
@@ -115,7 +119,7 @@ def augment_SCA_multiprocessing(region, output_res, threshold):
     print(f"Getting VIIRS fsca values for {len(GeoObsDF_files)} timesteps of observations for {region}")
 
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
-    with cf.ProcessPoolExecutor(max_workers=6) as executor:  #settting max works to 6 to not make NASA mad...
+    with cf.ProcessPoolExecutor(max_workers=CPUS) as executor:  #settting max works to 6 to not make NASA mad...
         # Start the load operations and mark each future with its process function
         [executor.submit(single_df_VIIRS, (GeoObsDF_files[i],GeoObsDF_path, VIIRSdata_path, ViirsGeoObsDF_path, threshold, output_res)) for i in range(len(GeoObsDF_files))]
 

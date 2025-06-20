@@ -35,6 +35,10 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
 else:
     print(f"no AWS credentials present, {HOME}/{KEYPATH}")
     
+#set multiprocessing limits
+CPUS = len(os.sched_getaffinity(0))
+CPUS = (CPUS/2)-2
+    
 
 def GetSeasonalAccumulatedPrecipSingleSite(args):
     Precippath, precip, output_res, lat, lon, cell_id, dates, WYs = args
@@ -168,7 +172,7 @@ def get_precip_threaded(region, output_res, WYs):
     print(f"Getting daily precipitation data for {nsites} sites")
     #create dictionary for year
     #PrecipDict ={}
-    with cf.ThreadPoolExecutor(max_workers=None) as executor: #seems that they dont like when we shoot tons of threads to get data...
+    with cf.ThreadPoolExecutor(max_workers=CPUS) as executor: #seems that they dont like when we shoot tons of threads to get data...
         {executor.submit(GetSeasonalAccumulatedPrecipSingleSite, (Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs)):
                 i for i in tqdm(range(nsites))}
         
@@ -218,7 +222,7 @@ def Make_Precip_DF(region, output_res, threshold):
     GeoObsDF_files = [filename for filename in os.listdir(DFpath)]
     pptfiles = [filename for filename in os.listdir(Precippath)]
 
-    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+    with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
         # Start the load operations and mark each future with its process function
         [executor.submit(single_date_add_precip, (DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region)) for geofile in GeoObsDF_files]
     # for geofile in GeoObsDF_files:

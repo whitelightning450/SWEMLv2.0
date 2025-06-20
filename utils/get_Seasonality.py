@@ -30,7 +30,9 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
     BUCKET = S3.Bucket(BUCKET_NAME)
 else:
     print(f"no AWS credentials present, {HOME}/{KEYPATH}")
-    
+#set multiprocessing limits
+CPUS = len(os.sched_getaffinity(0))
+CPUS = (CPUS/2)-2    
 
 # creat Seasonality features
 #begin with day of year starting from October 1st
@@ -63,7 +65,7 @@ def add_Seasonality(region, output_res, threshold):
     files = [filename for filename in os.listdir(DFpath)]
     print(f"Adding Day of Season, seasonal nearest monitoring site averages, and seasonal nearest monitoring site relationship to averages to all {region} dataframes...")
     
-    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+    with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
         # Start the load operations and mark each future with its process function
         [executor.submit(single_file_seasonality, (file, DFpath, region, output_res, Savepath)) for file in tqdm_notebook(files)]
     # for file in tqdm_notebook(files):

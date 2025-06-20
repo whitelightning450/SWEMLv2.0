@@ -91,6 +91,10 @@ if os.path.isfile(f"{HOME}/{KEYPATH}") == True:
 else:
     print("no AWS credentials present, skipping")
     
+#set multiprocessing limits
+CPUS = len(os.sched_getaffinity(0))
+CPUS = (CPUS/2)-2
+    
 
 def row_snotel(row, distance_cache, nearest_snotel, snotel_gdf, n):
     cell_id = row.name
@@ -398,7 +402,7 @@ def add_geospatial_threaded(region, output_res):
     aso_swe_files = [filename for filename in os.listdir(f"{TrainingDFpath}/Obsdf")]
     
     print(f"Concatenating {len(aso_swe_files)} with geospatial data...")
-    with cf.ProcessPoolExecutor(max_workers=None) as executor: 
+    with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
         # Start the load operations and mark each future with its process function
         [executor.submit(add_geospatial_single, (f"{TrainingDFpath}/Obsdf", aso_swe_files[i], aso_gdf,GeoObsdfs)) for i in tqdm_notebook(range(len(aso_swe_files)))]
         
