@@ -278,6 +278,42 @@ class ASODataProcessing:
         except Exception as e:
             print(f"An error occurred: {str(e)}")
             return None
+        
+    def region_sort(self,input_file, region):
+        try:
+            dir = f"{HOME}/data/ASO/"
+            output_folder = os.path.join(dir, f"{region}/Raw_ASO_Data")
+            os.makedirs(output_folder, exist_ok=True)
+            # print(output_folder)
+            ## clean up file name; retrieve & reformat date
+            date = next(element for element in os.path.splitext(input_file)[0].split("_") if element.startswith('20'))
+            if type(date[4]) == str:
+                date_singleday = os.path.splitext(date)[0].split("-")[0]
+                datetime_object = datetime.strptime(date_singleday, "%Y%b%d")
+                date = datetime_object.strftime('%Y%m%d')
+            basin = os.path.splitext(input_file)[0].split("_")[1]
+            dst = f"{output_folder}/ASO_50M_SWE_{basin}_{date}.tif"
+            BBox = ASODataTool.get_bounding_box_list(region)
+
+            #open file, reproject to WGS84, retrieve file extent
+            rds = rxr.open_rasterio(input_file)
+            rds_4326 = rds.rio.reproject("EPSG:4326")
+            xmin = np.float64(np.min(rds_4326['x']))
+            xmax = np.float64(np.max(rds_4326['x']))
+            ymin = np.float64(np.min(rds_4326['y']))
+            ymax = np.float64(np.max(rds_4326['y']))
+            rds_bbox = [xmin,ymin,xmax,ymax]
+
+            #check if corners of file extent are within region bbox:
+            if ((xmin > BBox[0] and xmin < BBox[2]) or (xmax > BBox[0] and xmax < BBox[2])):
+                if ((ymin > BBox[1] and ymin < BBox[3]) or (ymax > BBox[1] and ymax < BBox[3])):
+                    print(region)
+                    #save file w/ original projection in Raw_ASO_Data directory in correct region
+                    shutil.copy(input_file, dst)
+            # else:
+                # print('no match')         
+        except Exception as e:
+            print(f"Error: {str(e)}")
     
     def average_duplicates(self, cell_id, aso_file, siteave_dic):
         sitex = aso_file[aso_file['cell_id'] == cell_id]
