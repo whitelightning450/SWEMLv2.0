@@ -45,7 +45,7 @@ else:
 
     #set multiprocessing limits
 CPUS = len(os.sched_getaffinity(0))
-CPUS = (CPUS/2)-2
+CPUS = int((CPUS/2)-2)
     
 #set home to the head of the SWEMLv2.0 directory
 

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import ee #pip install earthengine-api
-import utils.EE_funcs
+import utils.EE_funcs as EE_funcs
 import os
 from tqdm import tqdm
 from tqdm.notebook import tqdm_notebook
@@ -37,7 +37,7 @@ else:
     
 #set multiprocessing limits
 CPUS = len(os.sched_getaffinity(0))
-CPUS = (CPUS/2)-2
+CPUS = int((CPUS/2)-2)
     
 
 def GetSeasonalAccumulatedPrecipSingleSite(args):
@@ -97,30 +97,24 @@ def GetSeasonalAccumulatedPrecipSingleSite(args):
             #save each year as a dic
             WY_Precip[f"WY{year}"] = WY[mask].reset_index(drop = True)
 
-
-        #PrecipDict[cell_id] = pd.concat(WY_Precip.values(), ignore_index=True)
         df = pd.concat(WY_Precip.values(), ignore_index=True)
         table = pa.Table.from_pandas(df)
         # Parquet with Brotli compression
         pq.write_table(table, f"{Precippath}/NLDAS_PPT_{cell_id}.parquet", compression='BROTLI')
-       # print(f"{cell_id} done...")
     
     
 
 def get_precip_threaded(region, output_res, WYs):
     #  #ASO file path
-    #aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet/"
     aso_swe_files_folder_path = f"{HOME}/data/ASO/{region}/{output_res}M_SWE_parquet/"
 
     #make directory for data 
-    # Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites"
     Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites"
 
     if not os.path.exists(Precippath):
         os.makedirs(Precippath, exist_ok=True)
     
     #load metadata and get site info
-    # path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/{region}_metadata.parquet"
     path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/{region}_metadata.parquet"
 
     meta = pd.read_parquet(path)
@@ -171,14 +165,13 @@ def get_precip_threaded(region, output_res, WYs):
 
     print(f"Getting daily precipitation data for {nsites} sites")
     #create dictionary for year
-    #PrecipDict ={}
-    with cf.ThreadPoolExecutor(max_workers=CPUS) as executor: #seems that they dont like when we shoot tons of threads to get data...
+    with cf.ThreadPoolExecutor(max_workers=6) as executor: #seems that they dont like when we shoot tons of threads to get data...
         {executor.submit(GetSeasonalAccumulatedPrecipSingleSite, (Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs)):
                 i for i in tqdm(range(nsites))}
         
-#     for i in tqdm(range(nsites)): #trying for loop bc multithreader not working....
-#         args = Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs
-#         GetSeasonalAccumulatedPrecipSingleSite(args)
+    # for i in tqdm(range(nsites)): #trying for loop bc multithreader not working....
+    #     args = Precippath, precip, output_res, meta.iloc[i]['cen_lat'], meta.iloc[i]['cen_lon'], meta.iloc[i]['cell_id'], dates, ASO_WYs
+    #     GetSeasonalAccumulatedPrecipSingleSite(args)
     
     
     print(f"Job complete for getting precipiation datdata for WY{year}, processing dataframes for file storage")
@@ -203,13 +196,6 @@ def ProcessDates(args):
 def Make_Precip_DF(region, output_res, threshold):
 
     print(f"Adding precipitation features to ML dataframe for the {region} region.")
-   # try:
-    #precip and 
-#     Precippath = f"{HOME}/SWEMLv2.0/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites/"
-#     DFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
-
-#     #make precip df path
-#     PrecipDFpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
     Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites/"
     DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
 
@@ -253,24 +239,11 @@ def single_date_add_precip(args):
         try:
             ppt = pd.read_parquet(f"{Precippath}/NLDAS_PPT_{site}.parquet")
             ppt.rename(columns={'datetime':'Date'}, inplace = True)
-            #cell = ppt['cell_id'].values[0]
-        #if cell in unique_cells:
-         #   try:
             GDF.loc[site,'season_precip_cm'] = round(ppt['season_precip_cm'][ppt['Date']== strdate].values[0],1)
-            # except:
-            #     print(cell)
-            #     print(strdate)
-            #     print(geofile)
-            #     print(DFpath)
-            #     display(GDF.loc[cell])
-            #     display(ppt)
-            #     exit()
-        # else:
-        #     pass
+  
         except:
            print(f"{site} is bad, delete file from folder and rerun the get precipitation script")
 
-    #GDF.to_parquet(f"{PrecipDFpath}/Precip_{geofile}", compression='BROTLI')
     #Convert DataFrame to Apache Arrow Table
     table = pa.Table.from_pandas(GDF)
     # Parquet with Brotli compression

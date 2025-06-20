@@ -32,7 +32,7 @@ else:
     print(f"no AWS credentials present, {HOME}/{KEYPATH}")
 #set multiprocessing limits
 CPUS = len(os.sched_getaffinity(0))
-CPUS = (CPUS/2)-2    
+CPUS = int((CPUS/2)-2)  
 
 # creat Seasonality features
 #begin with day of year starting from October 1st

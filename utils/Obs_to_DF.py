@@ -57,7 +57,7 @@ else:
     
 #set multiprocessing limits
 CPUS = len(os.sched_getaffinity(0))
-CPUS = (CPUS/2)-2
+CPUS = int((CPUS/2)-2)
 
 #function for processing a single row -  test to see if this works
 def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_data):
