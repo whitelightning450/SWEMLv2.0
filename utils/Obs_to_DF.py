@@ -167,7 +167,7 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
         os.makedirs(obsdf_path, exist_ok=True)
 
     #Get sites/snotel observations from 2013-2019
-    print('Loading observations from 2013-2019')
+    print('Loading observations')
     try:
         snotel_data = pd.read_parquet(Snotelobs_path)
         snotel_data = snotel_data.T

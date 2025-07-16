@@ -139,7 +139,7 @@ def getCaliSNOTELData(args):
     df.reset_index(inplace=True, drop=True)
     df["Date"] = pd.to_datetime(df["Date"])
     df.rename(columns={df.columns[1]:SiteID}, inplace=True)
-    df.iloc[:, 1:] = df.iloc[:, 1:].apply(lambda x: pd.to_numeric(x) * 0.0254)  # convert in to m
+    df.iloc[:, 1:] = df.iloc[:, 1:].apply(lambda x: pd.to_numeric(x) * 2.54)  # convert in to cm
     df['Water_Year'] = pd.to_datetime(df['Date']).map(lambda x: x.year+1 if x.month>9 else x.year)
     df.rename(columns = {'Date':'date'}, inplace = True)
     df. set_index('date', inplace = True)
@@ -173,7 +173,7 @@ def getSNOTELData(args):
     df.reset_index(inplace=True, drop=True)
     df["Date"] = pd.to_datetime(df["Date"])
     df.rename(columns={df.columns[1]:SiteID}, inplace=True)
-    df.iloc[:, 1:] = df.iloc[:, 1:].apply(lambda x: pd.to_numeric(x) * 0.0254)  # convert in to m
+    df.iloc[:, 1:] = df.iloc[:, 1:].apply(lambda x: pd.to_numeric(x) * 2.54)  # convert in to cm
     df['Water_Year'] = pd.to_datetime(df['Date']).map(lambda x: x.year+1 if x.month>9 else x.year)
     df.rename(columns = {'Date':'date'}, inplace = True)
     df. set_index('date', inplace = True)
@@ -257,99 +257,108 @@ def Get_Monitoring_Data_Threaded_Updated(years, start_m_d, end_m_d, WY=True):
 
     
         #convert to cm
-        SWE_df = round(SWE_df*2.54,1)
+        SWE_df = round(SWE_df,1)
         cols = SWE_df.columns
-        #make all values close to 0, 0
-        for col in cols:
-            SWE_df[col][(SWE_df[col] <0.3) & (SWE_df[col]> -20)] = 0
-            SWE_df[col][SWE_df[col] < -10] = -9999
-
-        table = pa.Table.from_pandas(SWE_df)
-        # Parquet with Brotli compression
-        pq.write_table(table,f"{snotel_path}/{year}_ground_measures_dp.parquet", compression='BROTLI')
-
-
-
-
-
-def Get_Monitoring_Data_Threaded_dp(years, start_m_d, end_m_d, WY=True):
-    
-    #snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data"
-    snotel_path = f"{HOME}/data/SNOTEL_Data"
-
-    GM_template = pd.read_parquet(f"{snotel_path}/ground_measures_metadata.parquet")
-    
-    # Get all records, can filter later,
-    CDECsites = list(GM_template['station_id'])
-    CDECsites = list(filter(lambda x: 'CDEC' in x, CDECsites))
-    CDECsites_complete = CDECsites.copy()
-    CDECsites = [x[-3:] for x in CDECsites]
-    
-    Snotelsites = list(GM_template['station_id'])
-    Snotelsites = list(filter(lambda x: 'SNOTEL' in x, Snotelsites))
-    
-    
-    # Make SWE observation dataframe
-    station_ids = CDECsites_complete + Snotelsites
-
-    for year in years:
-        if WY == True:
-            dates = list(pd.date_range(start=f"{year-1}-{start_m_d}",end=f"{year}-{end_m_d}"))
-
-        else:
-            dates = list(pd.date_range(start=f"{year}-{start_m_d}",end=f"{year}-{end_m_d}"))
         
-        dates = [d.strftime("%Y-%m-%d") for d in dates]
-        SWE_df = pd.DataFrame(columns= station_ids)
-        SWE_df['dates'] = dates
-        SWE_df.set_index('dates', inplace = True)
-        SWE_df.fillna(-9999, inplace = True)
+        #many sites may read -9999 or 0 early and late in season, we still want these! look to remove site with -9999 in February or march
+        begdate = f"{year}-02-01"
+        enddate = f"{year}-03-01"
+        Febswe = SWE_df.loc[begdate:enddate]
+        Febswemask = (Febswe >-1)
+        Febswemask = Febswemask.all()
+        swecols = Febswemask[Febswemask == True].index.tolist()
+        SWE_df = SWE_df[swecols]
 
-        print(f"Getting SNOTEL and CDEC observations for {year}")
-        start_date = dates[0]
-        end_date = dates[-1]
-    
-
-        resolution = 'D'
-        sensor_id = '3'
-        bad_sites = []
-    
-        print(f"Getting California Data Exchange Center SWE data from {len(CDECsites)} sites...") 
-        with cf.ThreadPoolExecutor(max_workers=None) as executor:
-            {executor.submit(get_CDEC_Threaded_dp, (SWE_df, site, sensor_id, resolution, start_date, end_date)): site for site in tqdm_notebook(CDECsites)}
-
-        # for site in tqdm_notebook(CDECsites):
-        #     args = SWE_df, site, sensor_id, resolution, start_date, end_date
-        #     get_CDEC_Threaded_dp(args)
-            
-            
-        print(f"Getting NRCS SNOTEL SWE data from {len(Snotelsites)} sites...") 
-        with cf.ThreadPoolExecutor(max_workers=6) as executor:
-            {executor.submit(get_SNOTEL_Threaded_dp, (SWE_df, site, start_date, end_date)): site for site in tqdm_notebook(Snotelsites)}
-
-        # for site in tqdm_notebook(CDECsites):
-        #     args = SWE_df, site, start_date, end_date
-        #     get_SNOTEL_Threaded_dp(args)
-
-        for col in CDECsites_complete:
-        # remove -- from CDEC predictions and make df a float
-            SWE_df[col] = SWE_df[col].astype(str)
-            SWE_df[col] = SWE_df[col].replace(['--'], '-9999')
-            SWE_df[col] = pd.to_numeric(SWE_df[col], errors='coerce')
-            SWE_df[col] = SWE_df[col].fillna(-9999)
-
-    
-        #convert to cm
-        SWE_df = round(SWE_df*2.54,1)
-        cols = SWE_df.columns
-        #make all values close to 0, 0
-        for col in cols:
-            SWE_df[col][(SWE_df[col] <0.3) & (SWE_df[col]> -20)] = 0
-            SWE_df[col][SWE_df[col] < -10] = -9999
+        #We can assume the remaining -9999 values are actually 0
+        for col in swecols:
+            SWE_df[col][SWE_df[col] <-1] = 0
 
         table = pa.Table.from_pandas(SWE_df)
         # Parquet with Brotli compression
         pq.write_table(table,f"{snotel_path}/{year}_ground_measures_dp.parquet", compression='BROTLI')
+
+
+
+
+
+# def Get_Monitoring_Data_Threaded_dp(years, start_m_d, end_m_d, WY=True):
+    
+#     #snotel_path = f"{HOME}/SWEMLv2.0/data/SNOTEL_Data"
+#     snotel_path = f"{HOME}/data/SNOTEL_Data"
+
+#     GM_template = pd.read_parquet(f"{snotel_path}/ground_measures_metadata.parquet")
+    
+#     # Get all records, can filter later,
+#     CDECsites = list(GM_template['station_id'])
+#     CDECsites = list(filter(lambda x: 'CDEC' in x, CDECsites))
+#     CDECsites_complete = CDECsites.copy()
+#     CDECsites = [x[-3:] for x in CDECsites]
+    
+#     Snotelsites = list(GM_template['station_id'])
+#     Snotelsites = list(filter(lambda x: 'SNOTEL' in x, Snotelsites))
+    
+    
+#     # Make SWE observation dataframe
+#     station_ids = CDECsites_complete + Snotelsites
+
+#     for year in years:
+#         if WY == True:
+#             dates = list(pd.date_range(start=f"{year-1}-{start_m_d}",end=f"{year}-{end_m_d}"))
+
+#         else:
+#             dates = list(pd.date_range(start=f"{year}-{start_m_d}",end=f"{year}-{end_m_d}"))
+        
+#         dates = [d.strftime("%Y-%m-%d") for d in dates]
+#         SWE_df = pd.DataFrame(columns= station_ids)
+#         SWE_df['dates'] = dates
+#         SWE_df.set_index('dates', inplace = True)
+#         SWE_df.fillna(-9999, inplace = True)
+
+#         print(f"Getting SNOTEL and CDEC observations for {year}")
+#         start_date = dates[0]
+#         end_date = dates[-1]
+    
+
+#         resolution = 'D'
+#         sensor_id = '3'
+#         bad_sites = []
+    
+#         print(f"Getting California Data Exchange Center SWE data from {len(CDECsites)} sites...") 
+#         with cf.ThreadPoolExecutor(max_workers=None) as executor:
+#             {executor.submit(get_CDEC_Threaded_dp, (SWE_df, site, sensor_id, resolution, start_date, end_date)): site for site in tqdm_notebook(CDECsites)}
+
+#         # for site in tqdm_notebook(CDECsites):
+#         #     args = SWE_df, site, sensor_id, resolution, start_date, end_date
+#         #     get_CDEC_Threaded_dp(args)
+            
+            
+#         print(f"Getting NRCS SNOTEL SWE data from {len(Snotelsites)} sites...") 
+#         with cf.ThreadPoolExecutor(max_workers=6) as executor:
+#             {executor.submit(get_SNOTEL_Threaded_dp, (SWE_df, site, start_date, end_date)): site for site in tqdm_notebook(Snotelsites)}
+
+#         # for site in tqdm_notebook(CDECsites):
+#         #     args = SWE_df, site, start_date, end_date
+#         #     get_SNOTEL_Threaded_dp(args)
+
+#         for col in CDECsites_complete:
+#         # remove -- from CDEC predictions and make df a float
+#             SWE_df[col] = SWE_df[col].astype(str)
+#             SWE_df[col] = SWE_df[col].replace(['--'], '-9999')
+#             SWE_df[col] = pd.to_numeric(SWE_df[col], errors='coerce')
+#             SWE_df[col] = SWE_df[col].fillna(-9999)
+
+    
+#         #round to clean data 
+#         SWE_df = round(SWE_df,1)
+#         cols = SWE_df.columns
+#         #make all values close to 0, 0
+#         for col in cols:
+#             SWE_df[col][(SWE_df[col] <0.3) & (SWE_df[col]> -20)] = 0
+#             SWE_df[col][SWE_df[col] < -10] = -9999
+
+#         table = pa.Table.from_pandas(SWE_df)
+#         # Parquet with Brotli compression
+#         pq.write_table(table,f"{snotel_path}/{year}_ground_measures_dp.parquet", compression='BROTLI')
 
 
 def get_SNOTEL_Threaded_dp(args):
@@ -445,7 +454,10 @@ def combine_dfs(years):
     for year in years:
         year_df = pd.read_parquet(f"{snotel_path}/{year}_ground_measures_dp.parquet")
         df = pd.concat([df, year_df])
-
+    
+    #We want a temporally continuous record for our snotel sites throughout the model training/prediction period, there are 771 sites, omit others with an incomplete record
+    df = df.dropna(axis=1, how='any')
+    
     table = pa.Table.from_pandas(df)
     # Parquet with Brotli compression
     pq.write_table(table,f"{snotel_path}/ground_measures_dp.parquet", compression='BROTLI')

@@ -195,7 +195,10 @@ def SpatialAnalysis(EvalDF, markersize, cmap, var, Title, savfig, variant, figna
 
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
     if var == 'error':
-        norm = TwoSlopeNorm(vmin=Pred_Geo['y_error'].min(), vcenter=0, vmax=Pred_Geo['y_error'].max())
+        vmin = Pred_Geo['y_error'].min()
+        if vmin > 0:
+            vmin=-1
+        norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=Pred_Geo['y_error'].max())
         Pred_Geo.plot(column=var,
                     ax = ax,
                     legend=True,
