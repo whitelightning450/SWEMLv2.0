@@ -173,7 +173,7 @@ def single_df_VIIRS(args):
     # #save file as parquet
     table = pa.Table.from_pandas(adf)
     # Parquet with Brotli compression
-    pq.write_table(table,f"{ViirsGeoObsDF_path}/VIIRS_GeoObsDF_{timestamp}.parquet", compression='BROTLI')
+    pq.write_table(table,f"{ViirsGeoObsDF_path}/VIIRS_{GeoObsDF_file.split('.')[0]}.parquet", compression='BROTLI')
 
     print(f"dataprocessing VIIRS for {timestamp} complete...")
 

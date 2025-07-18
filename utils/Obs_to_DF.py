@@ -84,8 +84,11 @@ def cell_id_2_topography(row, timestamp,transposed_data,nearest_snotel, snotel_d
 def process_single_timestamp(args):
     #get key variable from args
     aso_swe_files_folder_path, aso_swe_file, new_column_names, snotel_data, nearest_snotel , Obsdf, obsdf_path, output_res = args
-        
+    
+    #Get timestamp
     timestamp = aso_swe_file.split('_')[-1].split('.')[0]
+    #Get region
+    region = aso_swe_file.split('_')[1]
 
     #load in SWE data from ASO
     aso_swe_data = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file))
@@ -138,8 +141,8 @@ def process_single_timestamp(args):
     Obsdf = Obsdf[cols]
     table = pa.Table.from_pandas(Obsdf)
     # Parquet with Brotli compression
-    print(f"{obsdf_path}/{timestamp}_ObsDF.parquet")
-    pq.write_table(table,f"{obsdf_path}/{timestamp}_ObsDF.parquet", compression='BROTLI')
+    print(f"{obsdf_path}/{region}_{timestamp}_ObsDF.parquet")
+    pq.write_table(table,f"{obsdf_path}/Obsdf_{region}_{timestamp}.parquet", compression='BROTLI')
   
 
 def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):    
@@ -151,10 +154,6 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
     #Snotelobs_path = f"{snotel_path}ground_measures.parquet"
     Snotelobs_path = f"{snotel_path}ground_measures_dp.parquet"
     # #nearest snotel path
-    # nearest_snotel_dict_path = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
-    # #ASO observations
-    # aso_swe_files_folder_path = f"{HOME}/SWEMLv2.0/data/ASO/{region}/{output_res}M_SWE_parquet"
-    #nearest snotel path
     nearest_snotel_dict_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
     #ASO observations
     aso_swe_files_folder_path = f"{HOME}/data/ASO/{region}/{output_res}M_SWE_parquet"
@@ -175,12 +174,6 @@ def Nearest_Snotel_2_obs_MultiProcess(region, output_res, manual, dates):
         snotel_data.rename(columns={'index':'station_id'}, inplace = True)
     except:
         print("Go run the get_InSitu_obs script above...")
-        breakpoint
-        # if not os.path.exists(snotel_path):
-        #     os.makedirs(snotel_path, exist_ok=True)
-        # key = "NSMv2.0"+Snotelobs_path.split("SWEMLv2.0",1)[1]        
-        # S3.meta.client.download_file(BUCKET_NAME, key,Snotelobs_path)
-        # snotel_data = pd.read_parquet(Snotelobs_path)
 
     #Load dictionary of nearest sites
     print(f"Loading {output_res}M resolution grids for {region} region")

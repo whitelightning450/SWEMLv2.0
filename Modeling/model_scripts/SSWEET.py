@@ -17,6 +17,7 @@ from matplotlib.colors import TwoSlopeNorm
 import seaborn as sns
 import sklearn
 from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
 import hydroeval as he
 from pickle import dump
 import pickle 
@@ -65,6 +66,22 @@ def load_Predictions(Region_list):
 
 #Function to convert predictions into parity plot plus evaluation metrics
 def parityplot(EvalDF, savfig, watershed, date, sim):   
+    
+    #Run model evaluate functions
+    Performance = pd.DataFrame()
+    y_test = EvalDF['y_test']
+    y_pred = EvalDF['y_pred']
+
+    
+    r2 = round(sklearn.metrics.r2_score(y_test, y_pred),2)
+    rmse = round(sklearn.metrics.mean_squared_error(y_test, y_pred, squared = False),2)
+    kge, r, alpha, beta = he.evaluator(he.kge, y_pred, y_test)
+    kge = round(kge[0], 2)
+    r = round(r[0], 2)
+    pbias = he.evaluator(he.pbias, y_pred, y_test)
+    pbias = round(pbias[0], 2)
+    mae = round(sklearn.metrics.mean_absolute_error(y_test, y_pred),2)
+    
 
     Title = f"SWEMLv2.0 Model Performance {date} \n {watershed} River Basin, {sim}"
     figname = f"./SWEMLv2.0/Evaluation/Figures/_{watershed}_parity_{date}_{sim}.png"
@@ -73,52 +90,64 @@ def parityplot(EvalDF, savfig, watershed, date, sim):
     sns.set(style='ticks')
     SWEmax = max(EvalDF['y_test'])
 
-    sns.relplot(data=EvalDF, x='y_test', y='y_pred', hue = 'Elevation_m', aspect=1.61)
+    g =sns.relplot(data=EvalDF, 
+                x='y_test',
+                y='y_pred',
+                hue = 'Elevation_m',
+                aspect=1.2,
+               height = 4)
     plt.plot([0,SWEmax], [0,SWEmax], color = 'red', linestyle = '--')
     plt.xlabel('Observed SWE (cm)')
     plt.ylabel('Predicted SWE (cm)')
     plt.title(Title)
+    plt.tight_layout(rect=[0, 0, 1, 0.98]) # Adjust layout to prevent title overlap
+
+    print(g.col_names)
+    #add model performance to plots
+    ax_A = g.axes[0, 0] # Access the specific Axes object
+    ax_A.text(
+        x=2, y=SWEmax*.95, # Data coordinates for the text
+        s=f"RMSE: {rmse}", # The text string
+        fontsize=8,
+        color='black',
+        bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.5')
+        )
+    ax_A.text(
+        x=2, y=SWEmax*.85, # Data coordinates for the text
+        s=f"KGE: {kge}", # The text string
+        fontsize=8,
+        color='black',
+        bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.5')
+        )
+    ax_A.text(
+        x=2, y=SWEmax*.75, # Data coordinates for the text
+        s=f"R2: {r2}", # The text string
+        fontsize=8,
+        color='black',
+        bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.5')
+        )
+
 
     if savfig==True:
         plt.savefig(figname, dpi =600, bbox_inches='tight')
 
-    plt.show()
+    g.fig #Display the plot
 
-    #Run model evaluate functions
-    #Regional
-    Performance = pd.DataFrame()
-    y_test = EvalDF['y_test']
-    y_pred = EvalDF['y_pred']
-
-    
-    r2 = sklearn.metrics.r2_score(y_test, y_pred)
-    rmse = sklearn.metrics.mean_squared_error(y_test, y_pred, squared = False)
-    kge, r, alpha, beta = he.evaluator(he.kge, y_pred, y_test)
-    pbias = he.evaluator(he.pbias, y_pred, y_test)
-
-    r2_fSCA = sklearn.metrics.r2_score(y_test, y_pred)
-    rmse_fSCA = sklearn.metrics.mean_squared_error(y_test, y_pred, squared = False)
-    kge_fSCA, r_fSCA, alpha_fSCA, beta_fSCA = he.evaluator(he.kge, y_pred, y_test)
-    pbias_fSCA = he.evaluator(he.pbias, y_pred, y_test)
-    
-    error_data = np.array([ round(r2,2),  
-                            round(rmse,2), 
-                            round(kge[0],2),
-                            round(pbias[0],2),
-                            round(r2_fSCA,2),
-                            round(rmse_fSCA,2),
-                            round(kge_fSCA[0],2),
-                            round(pbias_fSCA[0],2)])
+    error_data = np.array([ r2,  
+                            rmse, 
+                            kge,
+                           r,
+                            pbias,
+                           mae,
+                          ])
     
     error = pd.DataFrame(data = error_data.reshape(-1, len(error_data)), 
                             columns = ['R2',
                                     'RMSE',
                                     'KGE', 
+                                       'R',
                                     'PBias', 
-                                    'R2_fSCA',
-                                    'RMSE_fSCA',
-                                    'KGE_fSCA', 
-                                    'PBias_fSCA',
+                                       'MAE',
                                     ])    
     return error
     
