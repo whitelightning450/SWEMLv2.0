@@ -43,10 +43,10 @@ def DOS(date):
 
     return int(date)+Oct_Dec_days
 
-def seasonal_site_rel(df):
+def site_anomoly(df):
     cols = ['ns_1','ns_2','ns_3','ns_4','ns_5','ns_6']
     for col in cols:
-        newcol = f"Seasonal_{col}_rel"
+        newcol = f"{col}_anomoly"
         weekcol = f"{col}_week_mean"
         df[newcol] = df[col]/df[weekcol]
     #late season values cause division by 0 error. so far, all obs are 0/0, setting to 1
@@ -55,15 +55,13 @@ def seasonal_site_rel(df):
 
 def add_Seasonality(region, output_res, threshold):
     #load dataframe
-    # DFpath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
-    # Savepath = f'{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution/Seasonality_PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
     DFpath = f'{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
     Savepath = f'{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Seasonality_PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
     if not os.path.exists(Savepath):
         os.makedirs(Savepath, exist_ok=True)
 
     files = [filename for filename in os.listdir(DFpath)]
-    print(f"Adding Day of Season, seasonal nearest monitoring site averages, and seasonal nearest monitoring site relationship to averages to all {region} dataframes...")
+    print(f"Adding Day of Season, seasonal nearest monitoring site averages, and  nearest monitoring site anomoly to averages to all {region} dataframes...")
     
     with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
         # Start the load operations and mark each future with its process function
@@ -96,8 +94,8 @@ def single_file_seasonality(arg):
     #add the in situ metrics here
     df = add_nearest_snotel_ave(df, region, output_res)
 
-    #add seasonal relationship for nearest sites to current obs
-    df = seasonal_site_rel(df)
+    #add swe anomoly for nearest sites to current obs
+    df = site_anomoly(df)
 
     coldrop = ['week_id','year','Oct1st_weekid','EOY_weekid']
     df.drop(columns = coldrop, inplace =  True)

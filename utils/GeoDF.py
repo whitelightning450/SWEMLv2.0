@@ -177,23 +177,16 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     aso_swe_files_folder_path = f"{HOME}/data/ASO/{region}/{output_res}M_SWE_parquet"
     snotel_path = f"{HOME}/data/SNOTEL_Data/"
     
+    #load snotel geospatial metadata
     snotel_file = gpd.read_file('https://raw.githubusercontent.com/egagli/snotel_ccss_stations/main/all_stations.geojson').set_index('code')
     snotel_file = snotel_file[snotel_file['csvData']==True]
     snotel_file.reset_index(inplace = True, drop = False)
     snotel_file.rename(columns={'code':'station_id'}, inplace = True)
     
-    
-#     Snotelmeta_path = f"{snotel_path}ground_measures_metadata.parquet"
-    
-#     try:
-#         snotel_file = pd.read_parquet(Snotelmeta_path)
-#     except:
-#         print("Snotel meta not found, retreiving from AWS S3")
-#         if not os.path.exists(snotel_path):
-#             os.makedirs(snotel_path, exist_ok=True)
-#         key = "NSMv2.0"+Snotelmeta_path.split("SWEMLv2.0",1)[1]       
-#         S3.meta.client.download_file(BUCKET_NAME, key,Snotelmeta_path)
-#         snotel_file = pd.read_parquet(Snotelmeta_path)
+    #select only snotel sites with data throughout the modeling period (e.g., 2013-2025)
+    GroundMeasures = pd.read_parquet(f"{HOME}/data/SNOTEL_Data/ground_measures_dp.parquet")
+    mask = snotel_file['station_id'].isin(GroundMeasures.columns.tolist())
+    snotel_file = snotel_file[mask]
 
     ASO_meta_loc_DF = pd.DataFrame()
 
