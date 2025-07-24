@@ -265,15 +265,18 @@ def single_date_add_precip(args):
     pq.write_table(table, f"{PrecipDFpath}/Precip_{geofile}", compression='BROTLI')
 
     
+    
 def single_date_add_daymet_precip(args):
     training_df_path, precip_data_path, geofile, precip_df_path, WY, dataset = args
     #get date information
-    date = geofile.split('VIIRS_GeoObsDF_')[-1].split('.parquet')[0]
+    date = geofile.split('_')[-1].split('.parquet')[0]
+    region = geofile.split('_')[-2]
+    region_date = f"{region}_{date}"
     year = date[:4]
     mon = date[4:6]
     day = date[6:]
     strdate = f"{year}-{mon}-{day}"
-    print(f"Connecting precipitation to ASO observations for {WY} on {strdate}")
+    print(f"Connecting precipitation to ASO observations for {WY} on {strdate} at {region}")
     
     GDF = pd.read_parquet(os.path.join(training_df_path, geofile))
     GDF.set_index('cell_id', inplace = True)
@@ -281,33 +284,33 @@ def single_date_add_daymet_precip(args):
     
     # get precip filenames
     pptfiles = [filename for filename in os.listdir(precip_data_path) if filename.endswith('.parquet')]
-    # print(pptfiles)
     
-    ppt_idx = -1
-    # connect GDF to correct precip file by date
+    # need to connect GDF to precip file(s) by date and basin
+    # this is clunky but will work for now
+    pptfiles_region_date = []
     for i in range(len(pptfiles)):
-        ppt_date = pptfiles[i].split('_')[-1].split('.parquet')[0]
-        if ppt_date == date:
-            ppt_idx = i
-            break
-    if ppt_idx > -1:     
-        ppt = pd.read_parquet(f"{precip_data_path}/{pptfiles[ppt_idx]}")
-    else:
-        raise Exception('Failed to connect precip observations to dataframe')
+        pptfile_date = pptfiles[i].split('_')[-1].split('.parquet')[0]
+        pptfile_region = pptfiles[i].split('_')[-2]
+        pptfile_reg_date = f"{pptfile_region}_{pptfile_date}"
+        pptfiles_region_date.append(pptfile_reg_date)
         
-    #get unique cells
+    ppt_filename = [filename for filename in pptfiles if region_date in filename]
+    ppt_filepath = f"{precip_data_path}/{ppt_filename[0]}"
+    ppt = pd.read_parquet(ppt_filepath)
+        
+    # get unique cells
     sites = list(GDF.index)
     for site in sites:
         try:
             GDF.loc[site,'season_precip_cm'] = round(ppt['season_precip_cm'][ppt['cell_id']== site].values[0],1)
         except:
             print(f"{site} is bad, delete file from folder and rerun the get precipitation script")
-
+            
     #Convert DataFrame to Apache Arrow Table
     table = pa.Table.from_pandas(GDF)
     # Parquet with Brotli compression
     pq.write_table(table, f"{precip_df_path}/Precip{dataset if dataset == 'Daymet' else ''}_{geofile}", compression='BROTLI')
-
+#          
     
     
 def filename_parse(filename):
@@ -339,48 +342,59 @@ def get_daymet_precip(WY,output_res,thresh):
     obs_start = WY_start.strftime('%Y-%m-%d')
     print("Water Year start date:",obs_start)
     
-    # select basins, dates by ASO observation
-    ASO_dir = f"{HOME}/data/ASO/{WY}/Raw_ASO_Data"
-    files = [filename for filename in os.listdir(ASO_dir)
-             if filename.endswith(".tif")
+    # select basins, dates by training DF
+    training_df_dir = f"{HOME}/data/TrainingDFs/{WY}/{output_res}M_Resolution/VIIRSGeoObsDFs/{thresh}_fSCA_Thresh"
+    files = [filename for filename in os.listdir(training_df_dir)
+             if filename.endswith(".parquet")
             ]
-    
+    # print(files)
     for file in files:
-        filepath = f'{ASO_dir}/{file}'
-        date, newfilename = filename_parse(file)
-        obs_end = f'{date[:4]}-{date[4:6]}-{date[6:]}'
-        print("Getting precipitation data for",obs_end)
-        with rxr.open_rasterio(filepath) as src:
-            # reproject to WGS84
-            transformed = src.rio.reproject(rasterio.crs.CRS.from_epsg('4326'))
-            left, bottom, right, top = transformed.rio.bounds()
-            # add some padding to bbox
-            left -= 0.1
-            bottom -= 0.1
-            right += 0.1
-            top += 0.1
-            bbox = rasterio.coords.BoundingBox(left, bottom, right, top)
-        obs_precip = daymet.get_bygeom(bbox,dates=(obs_start,obs_end),variables="prcp",crs=4326)
-        obs_precip_transformed = obs_precip.rio.reproject(rasterio.crs.CRS.from_epsg('4326'))
+        filepath = f'{training_df_dir}/{file}'
+        #Get timestamp
+        timestamp = file.split('_')[-1].split('.')[0]
+        #Get region
+        region = file.split('_')[-2]
+        # print(timestamp,region)
+        obs_end = f'{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:]}'
         
-        # load previous training DF to extract metadata for specific observation
-        training_df_path = f"{HOME}/data/TrainingDFs/{WY}/{output_res}M_Resolution/VIIRSGeoObsDFs/{thresh}_fSCA_Thresh/VIIRS_GeoObsDF_{date}.parquet"
-        training_df = pd.read_parquet(training_df_path)
+        print(f"Getting precipitation data for {obs_end} at {region}")
+        
+        training_df = pd.read_parquet(filepath)
+        # get bounding box by min/max coordinates
+        left, right = training_df['cen_lon'].min(), training_df['cen_lon'].max()
+        bottom, top = training_df['cen_lat'].min(), training_df['cen_lat'].max()
+        # add some padding to bbox
+        left -= 0.1
+        bottom -= 0.1
+        right += 0.1
+        top += 0.1
+        bbox = rasterio.coords.BoundingBox(left, bottom, right, top)
+       
+        # get precip from Daymet server from beginning of WY through observation date and reproject
+        obs_precip = daymet.get_bygeom(bbox,dates=(obs_start,obs_end),variables="prcp",crs=4326)
+        obs_precip_transformed = obs_precip.rio.reproject(rasterio.crs.CRS.from_epsg('4326'))  
+        # print(bbox)    
+        
+        # extract metadata 
         meta = training_df[['cell_id','cen_lat','cen_lon']]
         # coordinates get rounded in get_VIIRS script, reassess later if need more precision
-
+        # print(meta['cen_lon'].min(),meta['cen_lon'].max(),meta['cen_lat'].min(),meta['cen_lat'].max())
         precip_arr = []
         season_precip_cm = []
         nsites = len(meta)
         for i in range(nsites):
             lat, lon = meta.iloc[i]['cen_lat'],meta.iloc[i]['cen_lon']
             cellid = meta.iloc[i]['cell_id']
+            # if ((lon>bbox[0] and lon<bbox[2]) and (lat>bbox[1] and lat<bbox[3])):
+                # print('got here')
             prcp = obs_precip_transformed.sel(x=lon,y=lat,method='nearest')['prcp']
+            season_precip = np.round(np.array(prcp.values).sum()/10,2)
+            # if season_precip >= 0:
             precip_arr.append([cellid,lat,lon,np.array(prcp.values)])
-            season_precip_cm.append(np.round(np.array(prcp.values).sum()/10,2))
+            season_precip_cm.append(season_precip)
         precip_df = pd.DataFrame(precip_arr,columns = ['cell_id','cen_lat','cen_lon','precip'])
         precip_df['season_precip_cm'] = season_precip_cm    
-        
+        # print(season_precip_cm)
         # print(precip_df.head())
         
         # save raw data for each basin and date
@@ -389,6 +403,5 @@ def get_daymet_precip(WY,output_res,thresh):
             os.makedirs(precip_data_path, exist_ok=True)
             
         table = pa.Table.from_pandas(precip_df)
-        pq.write_table(table, f"{precip_data_path}/Daymet_{newfilename}.parquet", compression='BROTLI')
+        pq.write_table(table, f"{precip_data_path}/Daymet_{region}_{timestamp}.parquet", compression='BROTLI')
         
-    # return season_precip
