@@ -51,9 +51,6 @@ else:
 #set multiprocessing limits
 CPUS = len(os.sched_getaffinity(0))
 CPUS = int((CPUS/2)-2)
-
-#load site code key
-ASO_Key=pd.read_csv(f"{HOME}/utils/ASONameKey.csv",header=3)
     
 
 def GetSeasonalAccumulatedPrecipSingleSite(args):
@@ -213,11 +210,15 @@ def Make_Precip_DF(region, output_res, threshold, dataset):
 
 
     print(f"Adding precipitation features to ML dataframe for {region}.")
-    Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_{dataset}_Precip/"
-    DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_{dataset}_Precip"
 
     #make precip df path
-    PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Precip_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    if dataset == 'Daymet':
+        PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Daymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+        DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    elif dataset == 'NLDAS':
+        PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/NLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+        DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Daymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
     if not os.path.exists(PrecipDFpath):
         os.makedirs(PrecipDFpath, exist_ok=True)
 
@@ -247,7 +248,7 @@ def single_date_add_precip(args):
     print(f"Connecting precipitation to ASO observations for {region} on {strdate}")
 
     GDF = pd.read_parquet(os.path.join(DFpath, geofile))
-    GDF.set_index('cell_id', inplace = True)
+    # GDF.set_index('cell_id', inplace = True)
     GDF['NLDAS'] = 0.0
     #get unique cells
     sites = list(GDF.index)
@@ -265,7 +266,7 @@ def single_date_add_precip(args):
     #Convert DataFrame to Apache Arrow Table
     table = pa.Table.from_pandas(GDF)
     # Parquet with Brotli compression
-    pq.write_table(table, f"{PrecipDFpath}/Precip_{geofile}", compression='BROTLI')
+    pq.write_table(table, f"{PrecipDFpath}/NLDAS_{geofile}", compression='BROTLI')
 
     
     
@@ -315,26 +316,6 @@ def single_date_add_daymet_precip(args):
     pq.write_table(table, f"{precip_df_path}/Precip{dataset if dataset == 'Daymet' else ''}_{geofile}", compression='BROTLI')
 #          
     
-    
-def filename_parse(filename):
-    date = next(element for element in os.path.splitext(filename)[0].split("_") if element.startswith('20'))
-    if date[4].isnumeric() == False:
-        date_singleday = os.path.splitext(date)[0].split("-")[0]
-        datetime_object = datetime.strptime(date_singleday, "%Y%b%d")
-        date = datetime_object.strftime('%Y%m%d')
-    #identify basin from site code if applicable, else identify basin from name
-    if filename[:12] == "ASO_50M_SWE_":
-        # print(file[12:18])
-        sitecode = filename[12:18]
-        index = ASO_Key['SITE CODE']==sitecode
-        sitename=(ASO_Key.loc[index,'SITE NAME']).item().replace(" ","_")
-        # print(sitename)
-        newfilename = f"{sitename}_{sitecode}_{date}"
-        # print(newfilename)
-    else:
-        sitename = os.path.splitext(filename)[0].split("_")[1]
-        newfilename = f"{sitename}_{date}"
-    return(date, newfilename)
 
 
 
