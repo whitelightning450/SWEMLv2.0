@@ -190,7 +190,7 @@ def get_precip_threaded(region, output_res, WYs):
     #     GetSeasonalAccumulatedPrecipSingleSite(args)
     
     
-    print(f"Job complete for getting precipiation datdata for WY{year}, processing dataframes for file storage")
+    print(f"Job complete for getting precipiation data for WY, processing dataframes for file storage")
 
 
 def ProcessDates(args):
@@ -210,6 +210,7 @@ def ProcessDates(args):
 
 
 def Make_Precip_DF(region, output_res, threshold, dataset):
+
 
     print(f"Adding precipitation features to ML dataframe for {region}.")
     Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_{dataset}_Precip/"
@@ -238,7 +239,7 @@ def Make_Precip_DF(region, output_res, threshold, dataset):
 def single_date_add_precip(args):
     DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region = args
     #get date information
-    date = geofile.split('VIIRS_GeoObsDF_')[-1].split('.parquet')[0]
+    date = geofile.split('_')[-1].split('.parquet')[0]
     year = date[:4]
     mon = date[4:6]
     day = date[6:]
@@ -257,8 +258,10 @@ def single_date_add_precip(args):
             GDF.loc[site,'season_precip_cm'] = round(ppt['season_precip_cm'][ppt['Date']== strdate].values[0],1)
   
         except:
-           print(f"{site} is bad, delete file from folder and rerun the get precipitation script")
-
+           # print(f"{site} is bad, delete file from folder and rerun the get precipitation script")
+            ppt = pd.read_parquet(f"{Precippath}/NLDAS_PPT_{site}.parquet")
+            ppt.rename(columns={'datetime':'Date'}, inplace = True)
+            print(f"{Precippath}/NLDAS_PPT_{site}.parquet is good, error in GDF {os.path.join(DFpath, geofile), strdate} ")
     #Convert DataFrame to Apache Arrow Table
     table = pa.Table.from_pandas(GDF)
     # Parquet with Brotli compression
@@ -404,4 +407,4 @@ def get_daymet_precip(WY,output_res,thresh):
             
         table = pa.Table.from_pandas(precip_df)
         pq.write_table(table, f"{precip_data_path}/Daymet_{region}_{timestamp}.parquet", compression='BROTLI')
-        
+       

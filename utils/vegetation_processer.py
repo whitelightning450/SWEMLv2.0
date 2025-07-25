@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import geopandas as gpd
 from tqdm import tqdm
+from tqdm.notebook import tqdm_notebook
+
 import rasterio
 from rasterio.warp import transform as warp_transform
 import requests
@@ -43,7 +45,7 @@ def sample_vegetation_data(vegetation_file, coords):
         raster_crs = src.crs
 
         values = []
-        for lon, lat in tqdm(coords, desc="Sampling Vegetation Data"):
+        for lon, lat in coords:
             try:
                 # Transform coordinates to the raster's coordinate reference system
                 transformed_lon, transformed_lat = warp_transform('EPSG:4326', raster_crs, [lon], [lat])
@@ -76,11 +78,12 @@ def process_vegetation_data_for_files(input_directory, vegetation_file, output_d
     
     with rasterio.open(vegetation_file) as src:
         vegetation_bbox = src.bounds
-        print(f"Vegetation file bounds: {vegetation_bbox}")
-        print(f"Vegetation CRS: {src.crs}")
+        # print(f"Vegetation file bounds: {vegetation_bbox}")
+        # print(f"Vegetation CRS: {src.crs}")
     
     # Progress bar for overall processing
-    for parquet_file in tqdm(parquet_files, desc="Processing Parquet Files"):
+    print('Adding Vegetation criteria to ASO grids')
+    for parquet_file in tqdm_notebook(parquet_files):
         input_file = os.path.join(input_directory, parquet_file)
         
         # Load Current Data

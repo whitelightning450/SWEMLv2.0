@@ -17,6 +17,7 @@ from matplotlib.colors import TwoSlopeNorm
 import seaborn as sns
 import sklearn
 from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
 import hydroeval as he
 from pickle import dump
 import pickle 
@@ -42,6 +43,8 @@ import matplotlib.pyplot as plt
 import contextily as cx
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+HOME = os.getcwd()
+
 #A function to load model predictions
 def load_Predictions(Region_list):
     #Regions = ['N_Sierras','S_Sierras_Low', 'S_Sierras_High']
@@ -65,6 +68,22 @@ def load_Predictions(Region_list):
 
 #Function to convert predictions into parity plot plus evaluation metrics
 def parityplot(EvalDF, savfig, watershed, date, sim):   
+    
+    #Run model evaluate functions
+    Performance = pd.DataFrame()
+    y_test = EvalDF['y_test']
+    y_pred = EvalDF['y_pred']
+
+    
+    r2 = round(sklearn.metrics.r2_score(y_test, y_pred),2)
+    rmse = round(sklearn.metrics.mean_squared_error(y_test, y_pred, squared = False),2)
+    kge, r, alpha, beta = he.evaluator(he.kge, y_pred, y_test)
+    kge = round(kge[0], 2)
+    r = round(r[0], 2)
+    pbias = he.evaluator(he.pbias, y_pred, y_test)
+    pbias = round(pbias[0], 2)
+    mae = round(sklearn.metrics.mean_absolute_error(y_test, y_pred),2)
+    
 
     Title = f"SWEMLv2.0 Model Performance {date} \n {watershed} River Basin, {sim}"
     figname = f"./SWEMLv2.0/Evaluation/Figures/_{watershed}_parity_{date}_{sim}.png"
@@ -73,52 +92,64 @@ def parityplot(EvalDF, savfig, watershed, date, sim):
     sns.set(style='ticks')
     SWEmax = max(EvalDF['y_test'])
 
-    sns.relplot(data=EvalDF, x='y_test', y='y_pred', hue = 'Elevation_m', aspect=1.61)
+    g =sns.relplot(data=EvalDF, 
+                x='y_test',
+                y='y_pred',
+                hue = 'Elevation_m',
+                aspect=1.2,
+               height = 4)
     plt.plot([0,SWEmax], [0,SWEmax], color = 'red', linestyle = '--')
     plt.xlabel('Observed SWE (cm)')
     plt.ylabel('Predicted SWE (cm)')
     plt.title(Title)
+    plt.tight_layout(rect=[0, 0, 1, 0.98]) # Adjust layout to prevent title overlap
+
+    print(g.col_names)
+    #add model performance to plots
+    ax_A = g.axes[0, 0] # Access the specific Axes object
+    ax_A.text(
+        x=2, y=SWEmax*.95, # Data coordinates for the text
+        s=f"RMSE: {rmse}", # The text string
+        fontsize=8,
+        color='black',
+        bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.5')
+        )
+    ax_A.text(
+        x=2, y=SWEmax*.85, # Data coordinates for the text
+        s=f"KGE: {kge}", # The text string
+        fontsize=8,
+        color='black',
+        bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.5')
+        )
+    ax_A.text(
+        x=2, y=SWEmax*.75, # Data coordinates for the text
+        s=f"R2: {r2}", # The text string
+        fontsize=8,
+        color='black',
+        bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.5')
+        )
+
 
     if savfig==True:
         plt.savefig(figname, dpi =600, bbox_inches='tight')
 
-    plt.show()
+    g.fig #Display the plot
 
-    #Run model evaluate functions
-    #Regional
-    Performance = pd.DataFrame()
-    y_test = EvalDF['y_test']
-    y_pred = EvalDF['y_pred']
-
-    
-    r2 = sklearn.metrics.r2_score(y_test, y_pred)
-    rmse = sklearn.metrics.mean_squared_error(y_test, y_pred, squared = False)
-    kge, r, alpha, beta = he.evaluator(he.kge, y_pred, y_test)
-    pbias = he.evaluator(he.pbias, y_pred, y_test)
-
-    r2_fSCA = sklearn.metrics.r2_score(y_test, y_pred)
-    rmse_fSCA = sklearn.metrics.mean_squared_error(y_test, y_pred, squared = False)
-    kge_fSCA, r_fSCA, alpha_fSCA, beta_fSCA = he.evaluator(he.kge, y_pred, y_test)
-    pbias_fSCA = he.evaluator(he.pbias, y_pred, y_test)
-    
-    error_data = np.array([ round(r2,2),  
-                            round(rmse,2), 
-                            round(kge[0],2),
-                            round(pbias[0],2),
-                            round(r2_fSCA,2),
-                            round(rmse_fSCA,2),
-                            round(kge_fSCA[0],2),
-                            round(pbias_fSCA[0],2)])
+    error_data = np.array([ r2,  
+                            rmse, 
+                            kge,
+                           r,
+                            pbias,
+                           mae,
+                          ])
     
     error = pd.DataFrame(data = error_data.reshape(-1, len(error_data)), 
                             columns = ['R2',
                                     'RMSE',
                                     'KGE', 
+                                       'R',
                                     'PBias', 
-                                    'R2_fSCA',
-                                    'RMSE_fSCA',
-                                    'KGE_fSCA', 
-                                    'PBias_fSCA',
+                                       'MAE',
                                     ])    
     return error
     
@@ -570,3 +601,83 @@ def barplot(EvalDF, cols, scaler, ylab, ncol, Title, save, figname):
         plt.savefig(figname, dpi=600, bbox_inches="tight")
 
     return df
+
+
+def plot_cdf(var, output_res, title="Cumulative Distribution Function for KGE",
+                     xlabel="KGE Value", ylabel="Cumulative Probability"):
+    
+    directory_path = f"./SWEMLv2.0/Predictions/Sturm_Seasonality_PrecipVIIRSGeoObsDFs"
+
+    files_and_dirs = os.listdir(directory_path)
+    # To get only files (and not subdirectories), you'd filter them:
+    files = [f for f in files_and_dirs if os.path.isfile(os.path.join(directory_path, f))]
+    PDF = pd.DataFrame()
+    for file in files:
+        pdf = pd.read_parquet(f"{directory_path}/{file}")
+        PDF = pd.concat([PDF, pdf])
+    PDF = PDF.sort_values(by =['KGE', 'RMSE'], ascending =[False, False])
+    
+    #select PDf spatial resolution
+    PDF[PDF['Resolution'] == output_res]
+    PDF.head(40)
+    
+    kge_values = PDF[var]
+
+
+    """
+    Plots the Cumulative Distribution Function (CDF) for a series of KGE values.
+
+    The CDF shows the probability that a randomly chosen KGE value from the
+    dataset will be less than or equal to a given value.
+
+    Args:
+        kge_values (pd.Series or np.array): The numerical KGE values to plot.
+                                            Non-numeric values or NaNs will be handled.
+        title (str): The title for the plot.
+        xlabel (str): The label for the x-axis (KGE values).
+        ylabel (str): The label for the y-axis (Cumulative Probability).
+    """
+    if not isinstance(kge_values, (pd.Series, np.ndarray)):
+        print("Error: Input 'kge_values' must be a Pandas Series or NumPy array.")
+        return
+
+    # Convert to NumPy array and remove any non-finite values (NaNs, inf)
+    # This ensures the data is clean for sorting and CDF calculation.
+    data = pd.to_numeric(kge_values, errors='coerce').dropna().values.flatten()
+
+    if len(data) == 0:
+        print("Warning: Input data is empty or contains only non-numeric values after cleaning. Cannot plot CDF.")
+        return
+
+    # Sort the data in ascending order
+    sorted_data = np.sort(data)
+
+    # Calculate the CDF values
+    # The i-th value in the sorted data corresponds to the (i+1)/N-th percentile.
+    cdf = np.arange(1, len(sorted_data) + 1) / len(sorted_data)
+    
+    #calculate median stat
+    # Calculate the median KGE value
+    median = np.median(data)
+
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(sorted_data, cdf, linestyle='-', alpha=0.7)
+    
+    # Add vertical line for the median KGE value
+    plt.axvline(x=median, color='red', linestyle='--', label=f'Median {var}: {median:.2f}')
+
+    # Add title and labels
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+
+    # Add grid for better readability
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    # Ensure tight layout to prevent labels from overlapping
+    plt.tight_layout()
+
+    # Display the plot
+    plt.show()
+    print(f"Median {var} is {median}")
