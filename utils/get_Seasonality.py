@@ -102,7 +102,7 @@ def single_file_seasonality(arg):
     #save dataframe
     table = pa.Table.from_pandas(df)
     # Parquet with Brotli compression
-    pq.write_table(table, f"{Savepath}/Season_{file}.parquet", compression='BROTLI')
+    pq.write_table(table, f"{Savepath}/Season_{file}", compression='BROTLI')
 
 def match_nearest_snotel(cell_id, WY_Week, n_snotel, ss_df):
     nearest_sites = n_snotel[str(cell_id)]
