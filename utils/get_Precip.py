@@ -214,10 +214,10 @@ def Make_Precip_DF(region, output_res, threshold, dataset):
 
     print(f"Adding precipitation features to ML dataframe for {region}.")
     Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_{dataset}_Precip/"
-    DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
 
     #make precip df path
-    PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Precip_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
     if not os.path.exists(PrecipDFpath):
         os.makedirs(PrecipDFpath, exist_ok=True)
 
@@ -248,14 +248,14 @@ def single_date_add_precip(args):
 
     GDF = pd.read_parquet(os.path.join(DFpath, geofile))
     GDF.set_index('cell_id', inplace = True)
-    GDF['season_precip_cm'] = 0.0
+    GDF['NLDAS'] = 0.0
     #get unique cells
     sites = list(GDF.index)
     for site in tqdm_notebook(sites):
         try:
             ppt = pd.read_parquet(f"{Precippath}/NLDAS_PPT_{site}.parquet")
             ppt.rename(columns={'datetime':'Date'}, inplace = True)
-            GDF.loc[site,'season_precip_cm'] = round(ppt['season_precip_cm'][ppt['Date']== strdate].values[0],1)
+            GDF.loc[site,'NLDAS'] = round(ppt['season_precip_cm'][ppt['Date']== strdate].values[0],1)
   
         except:
            # print(f"{site} is bad, delete file from folder and rerun the get precipitation script")
@@ -283,7 +283,7 @@ def single_date_add_daymet_precip(args):
     
     GDF = pd.read_parquet(os.path.join(training_df_path, geofile))
     GDF.set_index('cell_id', inplace = True)
-    GDF['season_precip_cm'] = 0.0
+    GDF['Daymet'] = 0.0
     
     # get precip filenames
     pptfiles = [filename for filename in os.listdir(precip_data_path) if filename.endswith('.parquet')]
@@ -305,7 +305,7 @@ def single_date_add_daymet_precip(args):
     sites = list(GDF.index)
     for site in sites:
         try:
-            GDF.loc[site,'season_precip_cm'] = round(ppt['season_precip_cm'][ppt['cell_id']== site].values[0],1)
+            GDF.loc[site,'Daymet'] = round(ppt['season_precip_cm'][ppt['cell_id']== site].values[0],1)
         except:
             print(f"{site} is bad, delete file from folder and rerun the get precipitation script")
             
@@ -346,7 +346,7 @@ def get_daymet_precip(WY,output_res,thresh):
     print("Water Year start date:",obs_start)
     
     # select basins, dates by training DF
-    training_df_dir = f"{HOME}/data/TrainingDFs/{WY}/{output_res}M_Resolution/VIIRSGeoObsDFs/{thresh}_fSCA_Thresh"
+    training_df_dir = f"{HOME}/data/TrainingDFs/{WY}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{thresh}_fSCA_Thresh"
     files = [filename for filename in os.listdir(training_df_dir)
              if filename.endswith(".parquet")
             ]
