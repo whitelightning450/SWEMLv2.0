@@ -55,8 +55,8 @@ def site_anomoly(df):
 
 def add_Seasonality(region, output_res, threshold):
     #load dataframe
-    DFpath = f'{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
-    Savepath = f'{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Seasonality_PrecipVIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
+    DFpath = f'{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
+    Savepath = f'{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh'
     if not os.path.exists(Savepath):
         os.makedirs(Savepath, exist_ok=True)
 
