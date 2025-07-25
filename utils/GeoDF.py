@@ -421,7 +421,7 @@ def add_geospatial_single(args):
     #Convert DataFrame to Apache Arrow Table
     table = pa.Table.from_pandas(final_df)
     # Parquet with Brotli compression
-    pq.write_table(table, f"{GeoObsdfs}/GeoObsdfs_{aso_swe_file[:8]}.parquet", compression='BROTLI')
+    pq.write_table(table, f"{GeoObsdfs}/Geo{aso_swe_file.split('.')[0]}.parquet", compression='BROTLI')
 
 def bounding_box(x_coordinate, y_coordinate, output_res):
 

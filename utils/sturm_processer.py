@@ -4,6 +4,7 @@ import numpy as np
 import geopandas as gpd
 #import sturm_processer as stpro
 from tqdm import tqdm
+from tqdm.notebook import tqdm_notebook
 import rasterio
 import subprocess
 import requests
@@ -37,7 +38,7 @@ def sample_sturm_data(sturm_file, coords):
         sturm_data = src.read(1)
         
         values = []
-        for lon, lat in tqdm(coords, desc="Sampling Sturm Data"):
+        for lon, lat in coords:
             # Transform coordinates to the raster's coordinate reference system
             row, col = ~transform * (lon, lat)
             row, col = int(row), int(col)
@@ -63,7 +64,8 @@ def process_sturm_data_for_files(input_directory, sturm_file, output_directory):
         print(f"Sturm file bounds: {sturm_bbox}")
     
     # Progress bar for overall processing
-    for parquet_file in tqdm(parquet_files, desc="Processing Parquet Files"):
+    print('Adding Sturm snow classificaction to ASO gridcells')
+    for parquet_file in tqdm_notebook(parquet_files):
         input_file = os.path.join(input_directory, parquet_file)
         
         # Load Current Data
