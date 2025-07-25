@@ -1,14 +1,27 @@
 import numpy as np
 import pandas as pd
-import ee #pip install earthengine-api
-import utils.EE_funcs as EE_funcs
-import os
-from tqdm import tqdm
-from tqdm.notebook import tqdm_notebook
-import concurrent.futures as cf
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pickle as pkl
+import rioxarray as rxr
+
+#data packages
+import pydaymet as daymet
+import ee #pip install earthengine-api
+import utils.EE_funcs as EE_funcs
+
+#multiprocessing
+from tqdm import tqdm
+from tqdm.notebook import tqdm_notebook
+import concurrent.futures as cf
+
+#raster packages
+import rasterio
+import geopandas as gpd
+
+import os
+from datetime import datetime
+
 import boto3
 ee.Authenticate()
 ee.Initialize()
@@ -38,6 +51,9 @@ else:
 #set multiprocessing limits
 CPUS = len(os.sched_getaffinity(0))
 CPUS = int((CPUS/2)-2)
+
+#load site code key
+ASO_Key=pd.read_csv(f"{HOME}/utils/ASONameKey.csv",header=3)
     
 
 def GetSeasonalAccumulatedPrecipSingleSite(args):
@@ -109,7 +125,7 @@ def get_precip_threaded(region, output_res, WYs):
     aso_swe_files_folder_path = f"{HOME}/data/ASO/{region}/{output_res}M_SWE_parquet/"
 
     #make directory for data 
-    Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites"
+    Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_NLDAS_Precip"
 
     if not os.path.exists(Precippath):
         os.makedirs(Precippath, exist_ok=True)
@@ -193,10 +209,11 @@ def ProcessDates(args):
 
 
 
-def Make_Precip_DF(region, output_res, threshold):
+def Make_Precip_DF(region, output_res, threshold, dataset):
 
-    print(f"Adding precipitation features to ML dataframe for the {region} region.")
-    Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_NLDAS_Precip/sites"
+
+    print(f"Adding precipitation features to ML dataframe for {region}.")
+    Precippath = f"{HOME}/data/Precipitation/{region}/{output_res}M_{dataset}_Precip/"
     DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
 
     #make precip df path
@@ -207,16 +224,15 @@ def Make_Precip_DF(region, output_res, threshold):
     #Get list of dataframes
     GeoObsDF_files = [filename for filename in os.listdir(DFpath)]
     pptfiles = [filename for filename in os.listdir(Precippath)]
-
-    with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
-        # Start the load operations and mark each future with its process function
-        [executor.submit(single_date_add_precip, (DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region)) for geofile in GeoObsDF_files]
-    # for geofile in GeoObsDF_files:
-    #     single_date_add_precip((DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region))
-#     except:
-#         print(f"No ASO observations/dataframe to add NLDAS precipitation to in {region}, skipping")
-       
-
+    
+    if dataset == 'NLDAS':
+        with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
+            # Start the load operations and mark each future with its process function
+            [executor.submit(single_date_add_precip, (DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region)) for geofile in GeoObsDF_files]
+    elif dataset == 'Daymet': 
+        with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
+            # Start the load operations and mark each future with its process function
+            [executor.submit(single_date_add_daymet_precip, (DFpath, Precippath, geofile, PrecipDFpath, region, dataset)) for geofile in GeoObsDF_files]
 
 
 #multiprocess this first step
@@ -249,4 +265,146 @@ def single_date_add_precip(args):
     #Convert DataFrame to Apache Arrow Table
     table = pa.Table.from_pandas(GDF)
     # Parquet with Brotli compression
-    pq.write_table(table, f"{PrecipDFpath}/Precip_{geofile.split('.')[0]}", compression='BROTLI')
+    pq.write_table(table, f"{PrecipDFpath}/Precip_{geofile}", compression='BROTLI')
+
+    
+    
+def single_date_add_daymet_precip(args):
+    training_df_path, precip_data_path, geofile, precip_df_path, WY, dataset = args
+    #get date information
+    date = geofile.split('_')[-1].split('.parquet')[0]
+    region = geofile.split('_')[-2]
+    region_date = f"{region}_{date}"
+    year = date[:4]
+    mon = date[4:6]
+    day = date[6:]
+    strdate = f"{year}-{mon}-{day}"
+    print(f"Connecting precipitation to ASO observations for {WY} on {strdate} at {region}")
+    
+    GDF = pd.read_parquet(os.path.join(training_df_path, geofile))
+    GDF.set_index('cell_id', inplace = True)
+    GDF['season_precip_cm'] = 0.0
+    
+    # get precip filenames
+    pptfiles = [filename for filename in os.listdir(precip_data_path) if filename.endswith('.parquet')]
+    
+    # need to connect GDF to precip file(s) by date and basin
+    # this is clunky but will work for now
+    pptfiles_region_date = []
+    for i in range(len(pptfiles)):
+        pptfile_date = pptfiles[i].split('_')[-1].split('.parquet')[0]
+        pptfile_region = pptfiles[i].split('_')[-2]
+        pptfile_reg_date = f"{pptfile_region}_{pptfile_date}"
+        pptfiles_region_date.append(pptfile_reg_date)
+        
+    ppt_filename = [filename for filename in pptfiles if region_date in filename]
+    ppt_filepath = f"{precip_data_path}/{ppt_filename[0]}"
+    ppt = pd.read_parquet(ppt_filepath)
+        
+    # get unique cells
+    sites = list(GDF.index)
+    for site in sites:
+        try:
+            GDF.loc[site,'season_precip_cm'] = round(ppt['season_precip_cm'][ppt['cell_id']== site].values[0],1)
+        except:
+            print(f"{site} is bad, delete file from folder and rerun the get precipitation script")
+            
+    #Convert DataFrame to Apache Arrow Table
+    table = pa.Table.from_pandas(GDF)
+    # Parquet with Brotli compression
+    pq.write_table(table, f"{precip_df_path}/Precip{dataset if dataset == 'Daymet' else ''}_{geofile}", compression='BROTLI')
+#          
+    
+    
+def filename_parse(filename):
+    date = next(element for element in os.path.splitext(filename)[0].split("_") if element.startswith('20'))
+    if date[4].isnumeric() == False:
+        date_singleday = os.path.splitext(date)[0].split("-")[0]
+        datetime_object = datetime.strptime(date_singleday, "%Y%b%d")
+        date = datetime_object.strftime('%Y%m%d')
+    #identify basin from site code if applicable, else identify basin from name
+    if filename[:12] == "ASO_50M_SWE_":
+        # print(file[12:18])
+        sitecode = filename[12:18]
+        index = ASO_Key['SITE CODE']==sitecode
+        sitename=(ASO_Key.loc[index,'SITE NAME']).item().replace(" ","_")
+        # print(sitename)
+        newfilename = f"{sitename}_{sitecode}_{date}"
+        # print(newfilename)
+    else:
+        sitename = os.path.splitext(filename)[0].split("_")[1]
+        newfilename = f"{sitename}_{date}"
+    return(date, newfilename)
+
+
+
+def get_daymet_precip(WY,output_res,thresh):
+    
+    # set start date for precip obs to 10-1 of previous year
+    WY_start = datetime(WY-1, 10, 1)
+    obs_start = WY_start.strftime('%Y-%m-%d')
+    print("Water Year start date:",obs_start)
+    
+    # select basins, dates by training DF
+    training_df_dir = f"{HOME}/data/TrainingDFs/{WY}/{output_res}M_Resolution/VIIRSGeoObsDFs/{thresh}_fSCA_Thresh"
+    files = [filename for filename in os.listdir(training_df_dir)
+             if filename.endswith(".parquet")
+            ]
+    # print(files)
+    for file in files:
+        filepath = f'{training_df_dir}/{file}'
+        #Get timestamp
+        timestamp = file.split('_')[-1].split('.')[0]
+        #Get region
+        region = file.split('_')[-2]
+        # print(timestamp,region)
+        obs_end = f'{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:]}'
+        
+        print(f"Getting precipitation data for {obs_end} at {region}")
+        
+        training_df = pd.read_parquet(filepath)
+        # get bounding box by min/max coordinates
+        left, right = training_df['cen_lon'].min(), training_df['cen_lon'].max()
+        bottom, top = training_df['cen_lat'].min(), training_df['cen_lat'].max()
+        # add some padding to bbox
+        left -= 0.1
+        bottom -= 0.1
+        right += 0.1
+        top += 0.1
+        bbox = rasterio.coords.BoundingBox(left, bottom, right, top)
+       
+        # get precip from Daymet server from beginning of WY through observation date and reproject
+        obs_precip = daymet.get_bygeom(bbox,dates=(obs_start,obs_end),variables="prcp",crs=4326)
+        obs_precip_transformed = obs_precip.rio.reproject(rasterio.crs.CRS.from_epsg('4326'))  
+        # print(bbox)    
+        
+        # extract metadata 
+        meta = training_df[['cell_id','cen_lat','cen_lon']]
+        # coordinates get rounded in get_VIIRS script, reassess later if need more precision
+        # print(meta['cen_lon'].min(),meta['cen_lon'].max(),meta['cen_lat'].min(),meta['cen_lat'].max())
+        precip_arr = []
+        season_precip_cm = []
+        nsites = len(meta)
+        for i in range(nsites):
+            lat, lon = meta.iloc[i]['cen_lat'],meta.iloc[i]['cen_lon']
+            cellid = meta.iloc[i]['cell_id']
+            # if ((lon>bbox[0] and lon<bbox[2]) and (lat>bbox[1] and lat<bbox[3])):
+                # print('got here')
+            prcp = obs_precip_transformed.sel(x=lon,y=lat,method='nearest')['prcp']
+            season_precip = np.round(np.array(prcp.values).sum()/10,2)
+            # if season_precip >= 0:
+            precip_arr.append([cellid,lat,lon,np.array(prcp.values)])
+            season_precip_cm.append(season_precip)
+        precip_df = pd.DataFrame(precip_arr,columns = ['cell_id','cen_lat','cen_lon','precip'])
+        precip_df['season_precip_cm'] = season_precip_cm    
+        # print(season_precip_cm)
+        # print(precip_df.head())
+        
+        # save raw data for each basin and date
+        precip_data_path = f"{HOME}/data/Precipitation/{WY}/{output_res}M_Daymet_Precip"
+        if not os.path.exists(precip_data_path):
+            os.makedirs(precip_data_path, exist_ok=True)
+            
+        table = pa.Table.from_pandas(precip_df)
+        pq.write_table(table, f"{precip_data_path}/Daymet_{region}_{timestamp}.parquet", compression='BROTLI')
+       
