@@ -2,6 +2,7 @@ import datetime
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
+import numpy as np
 from tqdm import tqdm, tqdm_notebook
 import concurrent.futures as cf
 import os
@@ -50,6 +51,7 @@ def site_anomoly(df):
         weekcol = f"{col}_week_mean"
         df[newcol] = df[col]/df[weekcol]
     #late season values cause division by 0 error. so far, all obs are 0/0, setting to 1
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
     df.fillna(1, inplace = True)
     return df
 
@@ -66,6 +68,8 @@ def add_Seasonality(region, output_res, threshold):
     with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
         # Start the load operations and mark each future with its process function
         [executor.submit(single_file_seasonality, (file, DFpath, region, output_res, Savepath)) for file in tqdm_notebook(files)]
+    # for file in tqdm_notebook(files):
+    #     single_file_seasonality((file, DFpath, region, output_res, Savepath)) 
     # for file in tqdm_notebook(files):
     #     df = pd.read_parquet(os.path.join(DFpath, file))
     #     #add day of season info
@@ -130,7 +134,7 @@ def add_nearest_snotel_ave(df, region, output_res):
     nearest_snotel_dict_path = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
 
     #need to add WY week to ML dataframe
-    df.reset_index(inplace = True)
+    # df.reset_index(inplace = True)
     df['Date'] = pd.to_datetime(df['Date'])
     df['week_id'] = df['Date'].dt.strftime("%V").astype(int)
     df['year'] = df['Date'].dt.year

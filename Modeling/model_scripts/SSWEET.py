@@ -75,8 +75,9 @@ def parityplot(EvalDF, savfig, watershed, date, sim):
     y_pred = EvalDF['y_pred']
 
     
-    r2 = round(sklearn.metrics.r2_score(y_test, y_pred),2)
-    rmse = round(sklearn.metrics.mean_squared_error(y_test, y_pred, squared = False),2)
+    r2 = np.round(sklearn.metrics.r2_score(y_test, y_pred),2)
+    rmse = sklearn.metrics.mean_squared_error(y_test, y_pred, squared = False)
+    rmse = round(np.float64(rmse),1)
     kge, r, alpha, beta = he.evaluator(he.kge, y_pred, y_test)
     kge = round(kge[0], 2)
     r = round(r[0], 2)
@@ -124,6 +125,13 @@ def parityplot(EvalDF, savfig, watershed, date, sim):
     ax_A.text(
         x=2, y=SWEmax*.75, # Data coordinates for the text
         s=f"R2: {r2}", # The text string
+        fontsize=8,
+        color='black',
+        bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.5')
+        )
+    ax_A.text(
+        x=2, y=SWEmax*.65, # Data coordinates for the text
+        s=f"PBias: {pbias}", # The text string
         fontsize=8,
         color='black',
         bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.5')
@@ -230,7 +238,7 @@ def SpatialAnalysis(EvalDF, markersize, cmap, var, Title, savfig, variant, figna
         if vmin > 0:
             vmin=-1
         norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=Pred_Geo['y_error'].max())
-        Pred_Geo.plot(column=var,
+        Pred_Geo.plot(column='y_error',
                     ax = ax,
                     legend=True,
                     markersize=markersize,
@@ -268,7 +276,7 @@ def SpatialAnalysis(EvalDF, markersize, cmap, var, Title, savfig, variant, figna
                 vmax=vmax
                 )
         
-    if var == 'season_precip_cm':
+    if (var == 'NLDAS' or var == 'Daymet' or var == 'gridMET'):
         Pred_Geo.plot(column=var,
                 ax = ax,
                 legend=True,
@@ -281,7 +289,11 @@ def SpatialAnalysis(EvalDF, markersize, cmap, var, Title, savfig, variant, figna
 
     # ax.set_xlim(-1.335e7, -1.325e7)
     # ax.set_ylim(4.515e6, 4.58e6)
-    cx.add_basemap(ax, source="https://server.arcgisonline.com/ArcGIS/rest/services/"+variant+"/MapServer/tile/{z}/{y}/{x}")   #cx.providers.OpenStreetMap.Mapnik)
+    cx.add_basemap(ax, 
+                   # source="https://server.arcgisonline.com/ArcGIS/rest/services/"+variant+"/MapServer/tile/{z}/{y}/{x}"
+                   source=cx.providers.USGS.USImagery,
+                  # crs='EPSG:4326'
+                  )   #cx.providers.OpenStreetMap.Mapnik)
     ax.set_axis_off()
     # ax.text(-1.345e7, 4.64e6, f"SWE estimate: {date}", fontsize =14)
 
