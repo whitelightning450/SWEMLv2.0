@@ -43,7 +43,7 @@ warnings.filterwarnings("ignore")
 HOME = os.getcwd()
 # HOME = os.chdir('../..')
 # HOME = os.getcwd()
-KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
+KEYPATH = "SWEMLv2.0/utils/AWSaccessKeys.csv"
 ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
 
 #start session

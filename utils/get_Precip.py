@@ -221,9 +221,10 @@ def Make_Precip_DF(region, output_res, threshold, dataset):
     if dataset == 'Daymet':
         PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Daymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
         DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    ## daymet API currently deprecated, so skip to NLDAS
     elif dataset == 'NLDAS':
         PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/NLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
-        DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Daymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+        DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
     elif dataset == 'gridMET':
         PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/gridMETNLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
         DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/NLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
@@ -234,7 +235,7 @@ def Make_Precip_DF(region, output_res, threshold, dataset):
         os.makedirs(PrecipDFpath, exist_ok=True)
 
     #Get list of dataframes
-    GeoObsDF_files = [filename for filename in os.listdir(DFpath)]
+    GeoObsDF_files = [filename for filename in os.listdir(DFpath) if filename.endswith('.parquet')]
     pptfiles = [filename for filename in os.listdir(Precippath)]
     
     # if dataset == 'NLDAS':
@@ -242,11 +243,11 @@ def Make_Precip_DF(region, output_res, threshold, dataset):
     #         # Start the load operations and mark each future with its process function
     #         [executor.submit(single_date_add_precip, (DFpath, Precippath, geofile, PrecipDFpath, pptfiles, region)) for geofile in GeoObsDF_files]
     # elif (dataset == 'Daymet' or dataset == 'gridMET'): 
-    # with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
-    #     # Start the load operations and mark each future with its process function
-    #     [executor.submit(single_date_add_daymet_precip, (DFpath, Precippath, geofile, PrecipDFpath, region, dataset)) for geofile in GeoObsDF_files]
-    for geofile in GeoObsDF_files:
-        single_date_add_daymet_precip((DFpath, Precippath, geofile, PrecipDFpath, region, dataset)) 
+    with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
+        # Start the load operations and mark each future with its process function
+        [executor.submit(single_date_add_daymet_precip, (DFpath, Precippath, geofile, PrecipDFpath, region, dataset)) for geofile in GeoObsDF_files]
+    # for geofile in GeoObsDF_files:
+    #     single_date_add_daymet_precip((DFpath, Precippath, geofile, PrecipDFpath, region, dataset)) 
 
 
 #multiprocess this first step
@@ -347,7 +348,7 @@ def single_date_add_daymet_precip(args):
 
 
 
-def get_hyriver_precip(WY,output_res,thresh,dataset):
+def get_precip(WY,output_res,thresh,dataset):
     # get precip by grabbing bounding box from previous training DF for basin + date
     # set start date for precip obs to Oct 1 of previous year
     valid = ['daymet','gridmet','nldas']
@@ -378,56 +379,60 @@ def get_hyriver_precip(WY,output_res,thresh,dataset):
         region = file.split('_')[-2]
         # print(timestamp,region)
         obs_end = f'{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:]}'
-        
-        print(f"Getting precipitation data for {obs_end} at {region}")
-        
-        training_df = pd.read_parquet(filepath)
-        # get bounding box by min/max coordinates
-        left, right = training_df['cen_lon'].min(), training_df['cen_lon'].max()
-        bottom, top = training_df['cen_lat'].min(), training_df['cen_lat'].max()
-        # add some padding to bbox
-        left -= 0.1
-        bottom -= 0.1
-        right += 0.1
-        top += 0.1
-        bbox = rasterio.coords.BoundingBox(left, bottom, right, top)
-        # print(bbox)    
 
-        # get precip from appropriate server from beginning of WY through observation date and reproject
-        if dataset == 'Daymet':
-            var = "prcp"
-            obs_precip = daymet.get_bygeom(bbox,dates=(obs_start,obs_end),variables=var,crs="epsg:4326")
-        elif dataset == 'gridMET':
-            var = 'pr'
-            obs_precip = gridmet.get_bygeom(bbox,dates=(obs_start,obs_end),variables=var,crs="epsg:4326")
-        elif dataset == 'NLDAS':
-            var = "prcp"
-            obs_precip = nldas.get_bygeom(bbox,obs_start,obs_end,variables=var,geo_crs=4326,source='netcdf')
-        obs_precip_transformed = obs_precip.rio.reproject(rasterio.crs.CRS.from_epsg('4326'))   
-        
-        # extract metadata 
-        meta = training_df[['cell_id','cen_lat','cen_lon']]
-        precip_arr = []
-        season_precip_cm = []
-        nsites = len(meta)
-        for i in range(nsites):
-            lat, lon = meta.iloc[i]['cen_lat'],meta.iloc[i]['cen_lon']
-            cellid = meta.iloc[i]['cell_id']
-            prcp = obs_precip_transformed.sel(x=lon,y=lat,method='nearest')[var]
-            season_precip = np.round(np.array(prcp.values).sum()/10,2) # precip given in mm, convert to cm 
-            # if season_precip >= 0:
-            precip_arr.append([cellid,lat,lon,np.array(prcp.values)])
-            season_precip_cm.append(season_precip)
-        precip_df = pd.DataFrame(precip_arr,columns = ['cell_id','cen_lat','cen_lon','precip'])
-        precip_df['season_precip_cm'] = season_precip_cm    
-        
-        # save raw data for each basin and date
+        # check to see if precip data already downloaded, if not, then download
         precip_data_path = f"{HOME}/data/Precipitation/{WY}/{output_res}M_{dataset}_Precip"
         if not os.path.exists(precip_data_path):
             os.makedirs(precip_data_path, exist_ok=True)
+        if not os.path.exists(f"{precip_data_path}/{dataset}_{region}_{timestamp}.parquet"):
+        
+            print(f"Getting precipitation data for {obs_end} at {region}")
             
-        table = pa.Table.from_pandas(precip_df)
-        pq.write_table(table, f"{precip_data_path}/{dataset}_{region}_{timestamp}.parquet", compression='BROTLI')
+            training_df = pd.read_parquet(filepath)
+            # get bounding box by min/max coordinates
+            left, right = training_df['cen_lon'].min(), training_df['cen_lon'].max()
+            bottom, top = training_df['cen_lat'].min(), training_df['cen_lat'].max()
+            # add some padding to bbox
+            left -= 0.1
+            bottom -= 0.1
+            right += 0.1
+            top += 0.1
+            bbox = rasterio.coords.BoundingBox(left, bottom, right, top)
+            # print(bbox)    
+    
+            # get precip from appropriate server from beginning of WY through observation date and reproject
+            if dataset == 'Daymet':
+                var = "prcp"
+                obs_precip = daymet.get_bygeom(bbox,dates=(obs_start,obs_end),variables=var,crs="epsg:4326")
+            elif dataset == 'gridMET':
+                var = 'pr'
+                obs_precip = gridmet.get_bygeom(bbox,dates=(obs_start,obs_end),variables=var,crs="epsg:4326")
+            elif dataset == 'NLDAS':
+                var = "prcp"
+                obs_precip = nldas.get_bygeom(bbox,obs_start,obs_end,variables=var,geo_crs=4326,source='netcdf')
+            obs_precip_transformed = obs_precip.rio.reproject(rasterio.crs.CRS.from_epsg('4326'))   
+            
+            # extract metadata 
+            meta = training_df[['cell_id','cen_lat','cen_lon']]
+            precip_arr = []
+            season_precip_cm = []
+            nsites = len(meta)
+            for i in range(nsites):
+                lat, lon = meta.iloc[i]['cen_lat'],meta.iloc[i]['cen_lon']
+                cellid = meta.iloc[i]['cell_id']
+                prcp = obs_precip_transformed.sel(x=lon,y=lat,method='nearest')[var]
+                season_precip = np.round(np.array(prcp.values).sum()/10,2) # precip given in mm, convert to cm 
+                # if season_precip >= 0:
+                precip_arr.append([cellid,lat,lon,np.array(prcp.values)])
+                season_precip_cm.append(season_precip)
+            obs_precip_transformed.close()
+            precip_df = pd.DataFrame(precip_arr,columns = ['cell_id','cen_lat','cen_lon','precip'])
+            precip_df['season_precip_cm'] = season_precip_cm    
+            
+            # save raw data for each basin and date
+                
+            table = pa.Table.from_pandas(precip_df)
+            pq.write_table(table, f"{precip_data_path}/{dataset}_{region}_{timestamp}.parquet", compression='BROTLI')
 
 
 def get_aorc_precip(WY,output_res,thresh):
