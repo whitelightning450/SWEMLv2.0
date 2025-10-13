@@ -451,12 +451,13 @@ class ASODataProcessing_v2: #Revised script to work with 2020-2024 data put into
             print('Using function file')
             #code block for converting input file string to date to match WY2013-2019 format
             #2020-2024 is formatted differently
-            if WY in ['2020', '2021', '2022', '2023', '2024']:
+            if WY > 2019:
 
-                if input_file[-7:-4] == '50m':
-                    date = os.path.splitext(input_file)[0].split("_")[-3]
-                if input_file[-7:-4] == 'agg':
-                    date = os.path.splitext(input_file)[0].split("_")[-4]
+                # if input_file[-7:-4] == '50m':
+                #     date = os.path.splitext(input_file)[0].split("_")[-3]
+                # if input_file[-7:-4] == 'agg':
+                #     date = os.path.splitext(input_file)[0].split("_")[-4]
+                date = next(element for element in os.path.splitext(input_file)[0].split("_") if element.startswith('20'))
 
                 if '-' in date:
                     date = date.split("-")[0]
@@ -505,16 +506,19 @@ class ASODataProcessing_v2: #Revised script to work with 2020-2024 data put into
             return None
         
         
-    def processing_tiff(self, input_file, output_path, output_res, WY):
+    def processing_tiff(self, folder_path, tiff_filename, output_path, output_res, WY):
+        # Open the TIFF file
+        input_file = os.path.join(folder_path, tiff_filename)
         try:
             #code block for converting input file string to date to match WY2013-2019 format
                    #2020-2024 is formatted differently
-            if WY in ['2020', '2021', '2022', '2023', '2024']:
+            if int(WY) > 2019:
 
-                if input_file[-7:-4] == '50m':
-                    date = os.path.splitext(input_file)[0].split("_")[-3]
-                if input_file[-7:-4] == 'agg':
-                    date = os.path.splitext(input_file)[0].split("_")[-4]
+                # if input_file[-7:-4] == '50m':
+                #     date = os.path.splitext(input_file)[0].split("_")[-3]
+                # if input_file[-7:-4] == 'agg':
+                #     date = os.path.splitext(input_file)[0].split("_")[-4]
+                date = next(element for element in os.path.splitext(tiff_filename)[0].split("_") if element.startswith('20'))
 
                 if '-' in date:
                     date = date.split("-")[0]
@@ -531,12 +535,13 @@ class ASODataProcessing_v2: #Revised script to work with 2020-2024 data put into
                 date = f"{yr}{m}{d}"
 
                 #get location
-                loc = os.path.splitext(input_file)[0].split("_")[1]
+                # print(os.path.splitext(input_file)[0].split("_"))
+                loc = os.path.splitext(tiff_filename)[0].split("_")[1]
             #formatting for <2020
             else:
-                date = os.path.splitext(input_file)[0].split("_")[-1]
-                loc = os.path.splitext(input_file)[0].split("_")[-2]
-
+                date = os.path.splitext(tiff_filename)[0].split("_")[-1]
+                loc = os.path.splitext(tiff_filename)[0].split("_")[-2]
+            # print(WY,date,loc)
             
             # Define the output file path
             output_folder = os.path.join(output_path, f"{WY}/Processed_{output_res}M_SWE")
@@ -584,12 +589,11 @@ class ASODataProcessing_v2: #Revised script to work with 2020-2024 data put into
     def process_single_ASO_file(self, args):
             
         folder_path, tiff_filename, output_res, WY, dir = args
-        # Open the TIFF file
-        tiff_filepath = os.path.join(folder_path, tiff_filename)
-        df = self.processing_tiff(tiff_filepath, dir, output_res, WY)
         
+        df = self.processing_tiff(folder_path,tiff_filename, dir, output_res, WY)
+        # print(tiff_filename)
         #2020-2024 is formatted differently
-        if WY in ['2020', '2021', '2022', '2023', '2024']:
+        if int(WY) > 2019:
 
             if tiff_filename[-7:-4] == '50m':
                 date = os.path.splitext(tiff_filename)[0].split("_")[-3]
@@ -651,8 +655,8 @@ class ASODataProcessing_v2: #Revised script to work with 2020-2024 data put into
 
         print('Converting .tif to parquet')
         # dir = f"{HOME}/SWEMLv2.0/data/ASO/"
-        dir = f"{HOME}/data/ASO/"
-        folder_path = os.path.join(dir, input_folder)
+        aso_dir = f"{HOME}/data/ASO/"
+        folder_path = os.path.join(aso_dir, input_folder)
         
         # Check if the folder exists and is not empty
         if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
@@ -669,52 +673,55 @@ class ASODataProcessing_v2: #Revised script to work with 2020-2024 data put into
         # Create parquet files from TIFF files
         with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
         # Start the load operations and mark each future with its process function
-            [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, WY, dir)) for i in tqdm_notebook(range(len(tiff_files)))]
+            [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, WY, aso_dir)) for i in tqdm_notebook(range(len(tiff_files)))]
+        # for i in tqdm_notebook(range(len(tiff_files))):
+        #     self.process_single_ASO_file((folder_path, tiff_files[i], output_res, WY, aso_dir))
 
         print('Checking to make sure all files successfully converted...')
-        parquet_folder = os.path.join(dir, f"{WY}/{output_res}M_SWE_parquet")
+        parquet_folder = os.path.join(aso_dir, f"{WY}/{output_res}M_SWE_parquet")
         for parquet_file in tqdm_notebook(os.listdir(parquet_folder)):
             try:
                 aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
             except:# add x number of attempts
-                print(f"Bad file conversion for {parquet_file}, attempting to reprocess")
-                tiff_file = f"ASO_50M_SWE_USCACE_{parquet_file[-16:-8]}.tif"
-                print(tiff_file)
-                # redo function to convert tiff to parquet
-                args = folder_path, tiff_file, output_res, WY, dir
-                self.process_single_ASO_file(args)
-                try:
-                    print('Attempt 2')
-                    # try to reloade again
-                    aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                    print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                except:
-                    # redo function to convert tiff to parquet
-                    self.process_single_ASO_file(args)
-                    try:
-                        print('Attempt 3')
-                        # try to reloade again
-                        aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                        print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                    except:
-                        # redo function to convert tiff to parquet
-                        self.process_single_ASO_file(args)
-                        try:
-                            print('Attempt 4')
-                            # try to reloade again
-                            aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                            print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                        except:
-                            # redo function to convert tiff to parquet
-                            self.process_single_ASO_file(args)
-                            try:
-                                print('Attempt 5')
-                                # try to reloade again
-                                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                                print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                            except:
-                                # redo function to convert tiff to parquet
-                                self.process_single_ASO_file(args)
+                print(f"Bad file conversion for {parquet_file}")
+                # print(f"Bad file conversion for {parquet_file}, attempting to reprocess")
+                # tiff_file = f"ASO_50M_SWE_USCACE_{parquet_file[-16:-8]}.tif"
+                # print(tiff_file)
+                # # redo function to convert tiff to parquet
+                # args = folder_path, tiff_file, output_res, WY, dir
+                # self.process_single_ASO_file(args)
+                # try:
+                #     print('Attempt 2')
+                #     # try to reloade again
+                #     aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
+                #     print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
+                # except:
+                #     # redo function to convert tiff to parquet
+                #     self.process_single_ASO_file(args)
+                #     try:
+                #         print('Attempt 3')
+                #         # try to reloade again
+                #         aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
+                #         print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
+                #     except:
+                #         # redo function to convert tiff to parquet
+                #         self.process_single_ASO_file(args)
+                #         try:
+                #             print('Attempt 4')
+                #             # try to reloade again
+                #             aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
+                #             print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
+                #         except:
+                #             # redo function to convert tiff to parquet
+                #             self.process_single_ASO_file(args)
+                #             try:
+                #                 print('Attempt 5')
+                #                 # try to reloade again
+                #                 aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
+                #                 print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
+                #             except:
+                #                 # redo function to convert tiff to parquet
+                #                 self.process_single_ASO_file(args)
 
                            
                 

@@ -69,7 +69,7 @@ def add_Seasonality(region, output_res, threshold):
         # Start the load operations and mark each future with its process function
         [executor.submit(single_file_seasonality, (file, DFpath, region, output_res, Savepath)) for file in tqdm_notebook(files)]
     # for file in tqdm_notebook(files):
-    #     single_file_seasonality((file, DFpath, region, output_res, Savepath)) 
+        # single_file_seasonality((file, DFpath, region, output_res, Savepath)) 
     # for file in tqdm_notebook(files):
     #     df = pd.read_parquet(os.path.join(DFpath, file))
     #     #add day of season info

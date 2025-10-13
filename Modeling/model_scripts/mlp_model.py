@@ -43,7 +43,7 @@ from model_scripts import Simple_Eval
 
 #load access key
 HOME = os.path.expanduser('~')
-KEYPATH = "SWEMLv2.0/AWSaccessKeys.csv"
+KEYPATH = "SWEMLv2.0/utils/AWSaccessKeys.csv"
 ACCESS = pd.read_csv(f"{HOME}/{KEYPATH}")
 
 #start session
