@@ -436,7 +436,7 @@ def get_precip(WY,output_res,thresh,dataset):
             table = pa.Table.from_pandas(precip_df)
             pq.write_table(table, f"{precip_data_path}/{dataset}_{region}_{timestamp}.parquet", compression='BROTLI')
 
-
+## AORC functions adapted from CUAHSI HydroShare library - thank you!
 def get_aorc_precip(WY,output_res,thresh):
     # define start of water year
     WY_start = datetime(WY-1, 10, 1)
@@ -521,6 +521,7 @@ def get_aorc_precip(WY,output_res,thresh):
         table = pa.Table.from_pandas(precip_df)
         pq.write_table(table, f"{precip_data_path}/AORC_{region}_{timestamp}.parquet", compression='BROTLI')
        
+### next set of PRISM functions are adapted from Yen Yi Wu via CUAHSI - thank you! 
 def _progress_hook(block_num, block_size, total_size, t):
     """
     Callback function to update tqdm progress bar during file download.
