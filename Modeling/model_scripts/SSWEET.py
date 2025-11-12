@@ -67,7 +67,7 @@ def load_Predictions(Region_list):
 
 
 #Function to convert predictions into parity plot plus evaluation metrics
-def parityplot(EvalDF, savfig, watershed, date, sim):   
+def parityplot(EvalDF, savfig, watershed, date, sim, DataFrame):   
     
     #Run model evaluate functions
     Performance = pd.DataFrame()
@@ -87,7 +87,7 @@ def parityplot(EvalDF, savfig, watershed, date, sim):
     
 
     Title = f"SWEMLv2.0 Model Performance {date} \n {watershed} River Basin, {sim}"
-    figname = f"./SWEMLv2.0/Evaluation/Figures/_{watershed}_parity_{date}_{sim}.png"
+    figname = f"./SWEMLv2.0/Evaluation/Figures/{DataFrame}/_{watershed}_parity_{date}_{sim}.png"
     
     #Plot the results in a parity plot
     sns.set(style='ticks')
@@ -165,8 +165,8 @@ def parityplot(EvalDF, savfig, watershed, date, sim):
     
 #Plot the error/prediction compared to different variables
 def Model_Vs(EvalDF,metric,model_output,savfig, watershed, date, sim):   
-
-    figname = f"./SWEMLv2.0/Evaluation/Figures/{watershed}_{metric}_{model_output}_{date}_{sim}.png"
+    
+    figname = f"./SWEMLv2.0/Evaluation/Figures/{DataFrame}/{watershed}_{metric}_{model_output}_{date}_{sim}.png"
         
     #Calculate error
     EvalDF['error'] = EvalDF['y_test'] - EvalDF['y_pred']
