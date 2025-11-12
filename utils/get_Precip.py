@@ -13,6 +13,8 @@ import pygridmet as gridmet
 from pygridmet import GridMET
 import ee #pip install earthengine-api
 import utils.EE_funcs as EE_funcs
+import urllib.request
+import zipfile
 
 #multiprocessing
 from tqdm import tqdm
@@ -24,7 +26,7 @@ import rasterio
 import geopandas as gpd
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import boto3
 import s3fs
@@ -221,10 +223,10 @@ def Make_Precip_DF(region, output_res, threshold, dataset):
     if dataset == 'Daymet':
         PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Daymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
         DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
-    ## daymet API currently deprecated, so skip to NLDAS
+    ## daymet API currently deprecated, so skip to NLDAS from Veg
     elif dataset == 'NLDAS':
         PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/NLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
-        DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+        DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Daymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
     elif dataset == 'gridMET':
         PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/gridMETNLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
         DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/NLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
@@ -519,3 +521,126 @@ def get_aorc_precip(WY,output_res,thresh):
         table = pa.Table.from_pandas(precip_df)
         pq.write_table(table, f"{precip_data_path}/AORC_{region}_{timestamp}.parquet", compression='BROTLI')
        
+def _progress_hook(block_num, block_size, total_size, t):
+    """
+    Callback function to update tqdm progress bar during file download.
+    """
+    downloaded = block_num * block_size
+    if total_size > 0:
+        t.update(min(block_size, total_size - t.n))
+    else:
+        t.update(downloaded - t.n)
+
+def prism_download(start,stop,path,var):
+    base_url = "https://services.nacse.org/prism/data/get/us/4km/"
+    while start <= stop:
+        day = start.strftime("%Y%m%d")
+        url = f"{base_url}/{var}/{day}?format=nc"
+        output_file = os.path.join(path, day)
+
+        with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=f'Downloading {day}') as t:
+            urllib.request.urlretrieve(url, output_file, reporthook=lambda block_num, block_size, total_size: _progress_hook(block_num, block_size, total_size, t))
+
+        start += timedelta(days=1)
+
+def unzip_prism(start,stop,zipped_path,unzipped_path):
+    while start <= stop:
+        day = start.strftime("%Y%m%d")
+        zip_file_path = os.path.join(zipped_path, day)
+
+        # Check if the ZIP file exists
+        if os.path.exists(zip_file_path):
+            # Unzip the file
+            with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+                zip_ref.extractall(unzipped_path)
+                print(f"UNZIP file for {day} is completed.")
+            os.remove(zip_file_path)
+        else:
+            print(f"ZIP file for {day} not found.")
+
+        start += timedelta(days=1)
+
+def get_prism(WY):
+    prism_path = f'{HOME}/data/Precipitation/{WY}/prism_data'
+    zipped_path = f'{prism_path}/zipped'
+    unzipped_path = f'{prism_path}/unzipped'
+    os.makedirs(zipped_path,exist_ok=True)
+    os.makedirs(unzipped_path,exist_ok=True)
+
+    var = "ppt"
+    start = datetime.strptime(f"{WY-1}-10-01", "%Y-%m-%d")
+    stop = datetime.strptime(f"{WY}-09-30", "%Y-%m-%d")
+
+    if not os.path.exists(f'{prism_path}/{WY}.nc'):
+        prism_download(start,stop,zipped_path,var)
+        unzip_prism(start,stop,zipped_path,unzipped_path)
+
+        date_idx = pd.Index(pd.date_range(start=start,end=stop),name='time')
+        timeser = xr.open_mfdataset(f'{unzipped_path}/*.nc', 
+                                        combine='nested',
+                                        concat_dim=[date_idx,]
+                                        )
+        timeser.to_netcdf(path=f'{prism_path}/{WY}.nc')
+    else:
+        print(f'PRISM data already downloaded for {WY}')
+
+def add_prism_df(WY,output_res,threshold):
+
+    training_df_path = f"{HOME}/data/TrainingDFs/{WY}/{output_res}M_Resolution/AORCgridMETNLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    df_path = f"{HOME}/data/TrainingDFs/{WY}/{output_res}M_Resolution/PRISM_AORCgridMETNLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+    os.makedirs(df_path,exist_ok=True)
+    
+    training_dfs = [filename for filename in os.listdir(training_df_path) if filename.endswith('.parquet')]
+
+    obs_precip = xr.open_dataset(f'{HOME}/data/Precipitation/{WY}/prism_data/{WY}.nc')
+    # reproject to WGS84
+    obs_precip = obs_precip.rio.write_crs('EPSG:4269')
+    obs_precip_transformed = obs_precip.rio.reproject(rasterio.crs.CRS.from_epsg('4326'))   
+
+    WY_start = f'{WY-1}-10-01'
+
+    for geofile in training_dfs:
+        #get date information
+        date = geofile.split('_')[-1].split('.parquet')[0]
+        region = geofile.split('_')[-2]
+        year = date[:4]
+        mon = date[4:6]
+        day = date[6:]
+        strdate = f"{year}-{mon}-{day}"
+        print(f"Connecting PRISM precipitation to ASO observations on {strdate} at {region}")
+
+        # read training DF and add column for PRISM season precip
+        GDF = pd.read_parquet(os.path.join(training_df_path, geofile))
+        meta = GDF[['cell_id','cen_lat','cen_lon']]
+        GDF.set_index('cell_id', inplace=True)
+        GDF['PRISM'] = 0.0
+
+        # get subset of prism dataset for obs date:
+        # get bbox from training DF
+        left, right = meta['cen_lon'].min(), meta['cen_lon'].max()
+        bottom, top = meta['cen_lat'].min(), meta['cen_lat'].max()
+        # add some padding to bbox
+        left -= 0.1
+        bottom -= 0.1
+        right += 0.1
+        top += 0.1  
+        obs_precip_date = obs_precip_transformed.loc[dict(time=slice(WY_start,strdate))]
+        obs_precip = obs_precip_date.sel(y=slice(bottom, top), x=slice(left, right))
+
+        nsites = len(meta)
+        for i in range(nsites):
+            lat, lon = meta.iloc[i]['cen_lat'],meta.iloc[i]['cen_lon']
+            cellid = meta.iloc[i]['cell_id']
+            pr = obs_precip_date['Band1'].sel(x=lon,y=lat,method='nearest').values
+            season_precip = np.round(pr.sum()/10,2) # precip given in mm, convert to cm 
+            GDF.loc[cellid,'PRISM'] = season_precip
+        
+        obs_precip_date.close() 
+        obs_precip.close()
+        GDF.reset_index(inplace=True)
+
+        #Convert DataFrame to Apache Arrow Table
+        table = pa.Table.from_pandas(GDF)
+        # Parquet with Brotli compression
+        pq.write_table(table, f"{df_path}/PRISM_{geofile}", compression='BROTLI')
+    

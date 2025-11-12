@@ -261,7 +261,8 @@ def process_single_location(args):
         elevation = rxr.open_rasterio(signed_asset.href)
         
         slope = elevation.copy()
-        aspect = elevation.copy()
+        aspect_west = elevation.copy()
+        aspect_north = elevation.copy()
 
         transformer = Transformer.from_crs("EPSG:4326", elevation.rio.crs, always_xy=True)
         xx, yy = transformer.transform(lon, lat)
@@ -279,19 +280,22 @@ def process_single_location(args):
 
         # Calculate slope and aspect
         slope_arr = np.sqrt(grad_x**2 + grad_y**2)
-        aspect_arr = rad2deg(arctan2(-grad_y, grad_x)) % 360 
-        
+        aspect_arr = (-rad2deg(arctan2(-grad_y, grad_x)) + 270) % 360 # double check this
+        # aspect_arr = (-aspect_arr + 270) % 360
+
         slope.values[0] = slope_arr
-        aspect.values[0] = aspect_arr
+        aspect_west.values[0] = -np.sin(aspect_arr*np.pi/180)
+        aspect_north.values[0] = np.cos(aspect_arr*np.pi/180)
 
         elev = round(elevation.sel(x=xx, y=yy, method="nearest").values[0])
         slop = round(slope.sel(x=xx, y=yy, method="nearest").values[0])
-        asp = round(aspect.sel(x=xx, y=yy, method="nearest").values[0])
+        asp_w = round(aspect_west.sel(x=xx, y=yy, method="nearest").values[0],3)
+        asp_n = round(aspect_north.sel(x=xx, y=yy, method="nearest").values[0],3)
     except:
-        elev, slop, asp = np.nan, np.nan, np.nan
+        elev, slop, asp_w, asp_n = np.nan, np.nan, np.nan, np.nan
         print(f"{cell_id} does not have copernicus DEM data, manual input")
 
-    return cell_id, elev, slop, asp
+    return cell_id, elev, slop, asp_w, asp_n
 
 def extract_terrain_data_threaded(metadata_df, region, output_res):
     global elevation_cache 
@@ -337,22 +341,22 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
 
     
     results = []
-    # with cf.ThreadPoolExecutor(max_workers=None) as executor:
-    #     jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles)): 
-    #             i for i in tqdm_notebook(range(len(metadata_df)))}
+    with cf.ThreadPoolExecutor(max_workers=None) as executor:
+        jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles)): 
+                i for i in tqdm_notebook(range(len(metadata_df)))}
         
-    #     print(f"Job complete for getting geospatial metadata, processing dataframe")
-    #     for job in tqdm_notebook(cf.as_completed(jobs)):
-    #         results.append(job.result())
+        print(f"Job complete for getting geospatial metadata, processing dataframe")
+        for job in tqdm_notebook(cf.as_completed(jobs)):
+            results.append(job.result())
    
-    for i in tqdm_notebook(range(len(metadata_df))):
-        cell_id, elev, slop, asp = process_single_location((metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles))
-        site = [cell_id, elev, slop, asp]
-        results.append(site)
+    # for i in tqdm_notebook(range(len(metadata_df))):
+    #     cell_id, elev, slop, asp_w, asp_n = process_single_location((metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles))
+    #     site = [cell_id, elev, slop, asp_w, asp_n]
+    #     results.append(site)
 
             
 
-    meta = pd.DataFrame(results, columns=['cell_id', 'Elevation_m', 'Slope_Deg', 'Aspect_Deg'])
+    meta = pd.DataFrame(results, columns=['cell_id', 'Elevation_m', 'Slope_Deg', 'Aspect_W', 'Aspect_N'])
     meta.set_index('cell_id', inplace=True)
     metadata_df.set_index('cell_id', inplace=True)
     metadata_df = pd.concat([metadata_df, meta], axis = 1)
@@ -387,11 +391,11 @@ def add_geospatial_threaded(region, output_res):
         os.makedirs(GeoObsdfs, exist_ok=True)
 
     #Get Geospatial meta data
-    print(f"Loading goeospatial meta data for grids in {region}")
+    print(f"Loading geospatial metadata for grids in {region}")
     aso_gdf = pd.read_parquet(f"{TrainingDFpath}/{region}_metadata.parquet")
 
     #create dataframe
-    print(f"Loading all available processed ASO observations for the {region} at {output_res}M resolution")
+    print(f"Loading all available processed ASO observations for {region} at {output_res}M resolution")
     aso_swe_files = [filename for filename in os.listdir(f"{TrainingDFpath}/Obsdf")]
     
     print(f"Concatenating {len(aso_swe_files)} with geospatial data...")
@@ -413,7 +417,7 @@ def add_geospatial_single(args):
     final_df = pd.merge(ObsDF, aso_gdf, on = 'cell_id', how = 'left')
     cols = [
         'cell_id', 'Date',  'cen_lat', 'cen_lon', 'Elevation_m', 'Slope_Deg',
-        'Aspect_Deg', 'swe_m', 'ns_1', 'ns_2', 'ns_3', 'ns_4', 
+        'Aspect_W', 'Aspect_N', 'swe_m', 'ns_1', 'ns_2', 'ns_3', 'ns_4', 
         'ns_5', 'ns_6'
         ]
     final_df = final_df[cols]
