@@ -250,131 +250,121 @@ def GeoSpatial(region, output_res):
 #Processing using gdal
 def process_single_location(args):
     cell_id, lat, lon, DEMs, tiles = args
-    
-    #maybe thorugh a try/except here, look up how to find copernicus data --Problem is this! and finding the nearest location below
     try:
-        tile_id = f"Copernicus_DSM_COG_30_N{str(math.floor(lat))}_00_W{str(math.ceil(abs(lon)))}_00_DEM"
+        tile_id = f"Copernicus_DSM_COG_30_N{math.floor(lat)}_00_W{math.ceil(abs(lon))}_00_DEM"
         index_id = DEMs.loc[tile_id]['sliceID']
-
         signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
-
         elevation = rxr.open_rasterio(signed_asset.href)
-        
-        slope = elevation.copy()
-        aspect_west = elevation.copy()
-        aspect_north = elevation.copy()
+
+        tilearray = np.around(elevation.values[0]).astype(float)
+        grad_y, grad_x = gradient(tilearray)
+        slope_arr  = np.sqrt(grad_x**2 + grad_y**2)
+        aspect_arr = (-rad2deg(arctan2(-grad_y, grad_x)) + 270) % 360
 
         transformer = Transformer.from_crs("EPSG:4326", elevation.rio.crs, always_xy=True)
         xx, yy = transformer.transform(lon, lat)
 
-        tilearray = np.around(elevation.values[0]).astype(int)
-        geo = (math.floor(float(lon)), 90, 0.0, math.ceil(float(lat)), 0.0, -90)
+        x_idx = np.argmin(np.abs(elevation.x.values - xx))
+        y_idx = np.argmin(np.abs(elevation.y.values - yy))
 
-        driver = gdal.GetDriverByName('MEM')
-        temp_ds = driver.Create('', tilearray.shape[1], tilearray.shape[0], 1, gdalconst.GDT_Float32)
-
-        temp_ds.GetRasterBand(1).WriteArray(tilearray)
-
-        tilearray_np = temp_ds.GetRasterBand(1).ReadAsArray()
-        grad_y, grad_x = gradient(tilearray_np)
-
-        # Calculate slope and aspect
-        slope_arr = np.sqrt(grad_x**2 + grad_y**2)
-        aspect_arr = (-rad2deg(arctan2(-grad_y, grad_x)) + 270) % 360 # double check this
-        # aspect_arr = (-aspect_arr + 270) % 360
-
-        slope.values[0] = slope_arr
-        aspect_west.values[0] = -np.sin(aspect_arr*np.pi/180)
-        aspect_north.values[0] = np.cos(aspect_arr*np.pi/180)
-
-        elev = round(elevation.sel(x=xx, y=yy, method="nearest").values[0])
-        slop = round(slope.sel(x=xx, y=yy, method="nearest").values[0])
-        asp_w = round(aspect_west.sel(x=xx, y=yy, method="nearest").values[0],3)
-        asp_n = round(aspect_north.sel(x=xx, y=yy, method="nearest").values[0],3)
-    except:
-        elev, slop, asp_w, asp_n = np.nan, np.nan, np.nan, np.nan
+        elev  = round(float(tilearray[y_idx, x_idx]))
+        slop  = round(float(slope_arr[y_idx, x_idx]))
+        asp   = round(float(aspect_arr[y_idx, x_idx]))
+        asp_w = round(float(-np.sin(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
+        asp_n = round(float( np.cos(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
+    except Exception:
+        elev, slop, asp, asp_w, asp_n = np.nan, np.nan, np.nan, np.nan, np.nan
         print(f"{cell_id} does not have copernicus DEM data, manual input")
 
-    return cell_id, elev, slop, asp_w, asp_n
+    return cell_id, elev, slop, asp, asp_w, asp_n
+
+
+def _process_tile(args):
+    """Fetch one DEM tile and extract terrain values for all cells within it."""
+    tile_id, group_df, DEMs, tiles = args
+    results = []
+    try:
+        index_id = DEMs.loc[tile_id]['sliceID']
+        signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
+        elevation = rxr.open_rasterio(signed_asset.href)
+
+        # Compute slope/aspect once for the whole tile
+        tilearray  = np.around(elevation.values[0]).astype(float)
+        grad_y, grad_x = gradient(tilearray)
+        slope_arr  = np.sqrt(grad_x**2 + grad_y**2)
+        aspect_arr = (-rad2deg(arctan2(-grad_y, grad_x)) + 270) % 360
+
+        transformer = Transformer.from_crs("EPSG:4326", elevation.rio.crs, always_xy=True)
+
+        for _, row in group_df.iterrows():
+            xx, yy = transformer.transform(row['cen_lon'], row['cen_lat'])
+            x_idx = np.argmin(np.abs(elevation.x.values - xx))
+            y_idx = np.argmin(np.abs(elevation.y.values - yy))
+
+            elev  = round(float(tilearray[y_idx, x_idx]))
+            slop  = round(float(slope_arr[y_idx, x_idx]))
+            asp   = round(float(aspect_arr[y_idx, x_idx]))
+            asp_w = round(float(-np.sin(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
+            asp_n = round(float( np.cos(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
+            results.append((row['cell_id'], elev, slop, asp, asp_w, asp_n))
+
+    except Exception as e:
+        print(f"Error for tile {tile_id}: {e}")
+        for _, row in group_df.iterrows():
+            results.append((row['cell_id'], np.nan, np.nan, np.nan, np.nan, np.nan))
+
+    return results
+
 
 def extract_terrain_data_threaded(metadata_df, region, output_res):
-    global elevation_cache 
-    elevation_cache = {} 
-    metadata_df.reset_index(inplace=True)
-    print('Calculating dataframe bounding box')
+    metadata_df = metadata_df.reset_index()
     bounding_box = metadata_df.geometry.total_bounds
-    #get the max and mins to make sure we get all geos
-    min_x, min_y, max_x, max_y = math.floor(bounding_box[0])-1, math.floor(bounding_box[1])-1, math.ceil(bounding_box[2])+1, math.ceil(bounding_box[3])+1
-    print(min_x, min_y, max_x, max_y)
+    min_x, min_y = math.floor(bounding_box[0])-0.5, math.floor(bounding_box[1])-0.5
+    max_x, max_y = math.ceil(bounding_box[2])+0.5,  math.ceil(bounding_box[3])+0.5
+
     client = pystac_client.Client.open(
-            "https://planetarycomputer.microsoft.com/api/stac/v1",
-            ignore_conformance=True,
-        )
-
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        ignore_conformance=True,
+    )
     search = client.search(
-                    collections=["cop-dem-glo-90"],
-                    intersects = {
-                            "type": "Polygon",
-                            "coordinates": [[
-                            [min_x, min_y],
-                            [max_x, min_y],
-                            [max_x, max_y],
-                            [min_x, max_y],
-                            [min_x, min_y]  
-                        ]]})
-
+        collections=["cop-dem-glo-90"],
+        intersects={"type": "Polygon", "coordinates": [[
+            [min_x, min_y], [max_x, min_y], [max_x, max_y], [min_x, max_y], [min_x, min_y]
+        ]]},
+    )
     tiles = list(search.items())
+    DEMs = pd.DataFrame([[i, tiles[i].id] for i in range(len(tiles))],
+                        columns=['sliceID', 'tileID']).set_index('tileID')
+    print(f"There are {len(DEMs)} DEM tiles in the region")
 
-    DEMs = []
+    # Assign each cell to its DEM tile
+    metadata_df['tile_id'] = metadata_df.apply(
+        lambda row: f"Copernicus_DSM_COG_30_N{math.floor(row['cen_lat'])}_00_W{math.ceil(abs(row['cen_lon']))}_00_DEM",
+        axis=1,
+    )
+    tile_groups = [
+        (tid, grp.copy(), DEMs, tiles)
+        for tid, grp in metadata_df.groupby('tile_id')
+    ]
+    print(f"Processing {len(tile_groups)} unique DEM tiles for {len(metadata_df)} grid cells")
 
-    print("Retrieving Copernicus 90m DEM tiles")
-    for i in tqdm_notebook(range(0, len(tiles))):
-        row = [i, tiles[i].id]
-        DEMs.append(row)
-    DEMs = pd.DataFrame(columns = ['sliceID', 'tileID'], data = DEMs)
-    DEMs = DEMs.set_index(DEMs['tileID'])
-    del DEMs['tileID']
-    print(f"There are {len(DEMs)} tiles in the region")
+    all_results = []
+    with cf.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(_process_tile, tg) for tg in tile_groups]
+        for future in tqdm(cf.as_completed(futures), total=len(futures), desc="DEM tiles"):
+            all_results.extend(future.result())
 
-
-    print("Determining Grid Cell Spatial Features")
-
-    
-    results = []
-    with cf.ThreadPoolExecutor(max_workers=None) as executor:
-        jobs = {executor.submit(process_single_location, (metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles)): 
-                i for i in tqdm_notebook(range(len(metadata_df)))}
-        
-        print(f"Job complete for getting geospatial metadata, processing dataframe")
-        for job in tqdm_notebook(cf.as_completed(jobs)):
-            results.append(job.result())
-   
-    # for i in tqdm_notebook(range(len(metadata_df))):
-    #     cell_id, elev, slop, asp_w, asp_n = process_single_location((metadata_df.iloc[i]['cell_id'], metadata_df.iloc[i]['cen_lat'], metadata_df.iloc[i]['cen_lon'], DEMs, tiles))
-    #     site = [cell_id, elev, slop, asp_w, asp_n]
-    #     results.append(site)
-
-            
-
-    meta = pd.DataFrame(results, columns=['cell_id', 'Elevation_m', 'Slope_Deg', 'Aspect_W', 'Aspect_N'])
+    meta = pd.DataFrame(all_results, columns=['cell_id', 'Elevation_m', 'Slope_Deg', 'Aspect_Deg', 'Aspect_W', 'Aspect_N'])
     meta.set_index('cell_id', inplace=True)
     metadata_df.set_index('cell_id', inplace=True)
-    metadata_df = pd.concat([metadata_df, meta], axis = 1)
+    metadata_df = pd.concat([metadata_df.drop(columns='tile_id'), meta], axis=1)
 
-    #save regional dataframe
-    # dfpath = f"{HOME}/SWEMLv2.0/data/TrainingDFs/{region}/{output_res}M_Resolution"
     dfpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
-
-    
-    print(f"Saving {region} dataframe in {dfpath}")
-    
-    # Save the DataFrame as a parquet file
-    #Convert DataFrame to Apache Arrow Table, drop the geometry column to play nice with parquet files
+    os.makedirs(dfpath, exist_ok=True)
     metadata_df.pop('geometry')
-    table = pa.Table.from_pandas(metadata_df)
-    # Parquet with Brotli compression
-    pq.write_table(table, f"{dfpath}/{region}_metadata.parquet", compression='BROTLI')
-        
+    pq.write_table(pa.Table.from_pandas(metadata_df),
+                   f"{dfpath}/{region}_metadata.parquet", compression='BROTLI')
+
     return metadata_df, DEMs, tiles
 
 
@@ -404,7 +394,6 @@ def add_geospatial_threaded(region, output_res):
         [executor.submit(add_geospatial_single, (f"{TrainingDFpath}/Obsdf", aso_swe_files[i], aso_gdf,GeoObsdfs)) for i in tqdm_notebook(range(len(aso_swe_files)))]
         
         print(f"Job complete for connecting obs with geospatial data, the files can be found in {GeoObsdfs}")
-    
 
 
 def add_geospatial_single(args):
@@ -417,7 +406,7 @@ def add_geospatial_single(args):
     final_df = pd.merge(ObsDF, aso_gdf, on = 'cell_id', how = 'left')
     cols = [
         'cell_id', 'Date',  'cen_lat', 'cen_lon', 'Elevation_m', 'Slope_Deg',
-        'Aspect_W', 'Aspect_N', 'swe_m', 'ns_1', 'ns_2', 'ns_3', 'ns_4', 
+        'Aspect_Deg', 'Aspect_W', 'Aspect_N', 'swe_m', 'ns_1', 'ns_2', 'ns_3', 'ns_4',
         'ns_5', 'ns_6'
         ]
     final_df = final_df[cols]
@@ -426,31 +415,3 @@ def add_geospatial_single(args):
     table = pa.Table.from_pandas(final_df)
     # Parquet with Brotli compression
     pq.write_table(table, f"{GeoObsdfs}/Geo{aso_swe_file.split('.')[0]}.parquet", compression='BROTLI')
-
-def bounding_box(x_coordinate, y_coordinate, output_res):
-
-    degs = (output_res/111111)/2 #general formulat is three are 111,111m to one degree, divide by two because the given point is the centeroid
-    
-    '''returns 'BL_Coord_Long', 'BL_Coord_Lat', 
-             'BR_Coord_Long', 'BR_Coord_Lat', 
-             'UR_Coord_Long', 'UR_Coord_Lat', 
-              'UL_Coord_Long', 'UL_Coord_Lat']
-
-    '''
-    #Bottom left
-    BL_Coord_Long = x_coordinate-degs
-    BL_Coord_Lat = y_coordinate-degs
-
-    #Upper left
-    UL_Coord_Long = x_coordinate-degs
-    UL_Coord_Lat = y_coordinate+degs
-
-    #Upper right
-    UR_Coord_Long = x_coordinate+degs
-    UR_Coord_Lat = y_coordinate+degs
-
-    #Lower right
-    BR_Coord_Long = x_coordinate+degs
-    BR_Coord_Lat = y_coordinate-degs
-
-    return BL_Coord_Long, BL_Coord_Lat, BR_Coord_Long, BR_Coord_Lat, UR_Coord_Long, UR_Coord_Lat, UL_Coord_Long, UL_Coord_Lat

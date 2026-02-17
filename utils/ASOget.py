@@ -263,7 +263,7 @@ class ASODataProcessing_v2:
     
     @staticmethod
     def make_cell_id(output_res, cen_lat, cen_lon):
-        return f"{output_res}M_{round(cen_lat, 3)}_{round(cen_lon, 3)}"
+        return f"{output_res}M_{round(cen_lat, 6)}_{round(cen_lon, 6)}"
     
     def process_single_ASO_file(self, args):
         """Reproject one ASO tif to Albers, resample, convert back to WGS84, save as parquet."""
@@ -305,8 +305,10 @@ class ASODataProcessing_v2:
                 'cen_lon': lon.round(6),
                 'swe_m':   data[mask].round(4),
             })
-
-            df = df[['cen_lat', 'cen_lon', 'swe_m']]
+            df['cell_id'] = df.apply(
+                lambda row: self.make_cell_id(output_res, row['cen_lat'], row['cen_lon']), axis=1
+            )
+            df = df[['cell_id', 'cen_lat', 'cen_lon', 'swe_m']]
 
             parquet_folder = os.path.join(dir, f"{WY}/{output_res}M_SWE_parquet")
             os.makedirs(parquet_folder, exist_ok=True)
