@@ -2,63 +2,27 @@
 # Dataframe Packages
 import numpy as np
 from numpy import gradient, rad2deg, arctan2
-import xarray as xr
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 # Vector Packages
 import geopandas as gpd
-import shapely
-from shapely import wkt
 from shapely.geometry import Point, Polygon
-from pyproj import CRS, Transformer
+from pyproj import Transformer
 
 # Raster Packages
 import rioxarray as rxr
-import rasterio
-from rasterio.mask import mask
-from rioxarray.merge import merge_arrays
-import rasterstats as rs
-from osgeo import gdal
-from osgeo import gdalconst
 
 # Data Access Packages
-import earthaccess as ea
-import pickle
 import pystac_client
-#import richdem as rd
 import planetary_computer
-from planetary_computer import sign
 
 # General Packages
 import os
-import re
-import shutil
 import math
-from datetime import datetime
-import glob
-from pprint import pprint
-from typing import Union
-from pathlib import Path
-from tqdm import tqdm
-from tqdm._tqdm_notebook import tqdm_notebook
 from tqdm.auto import tqdm
-import time
-import requests
 import concurrent.futures as cf
-# import dask
-# import dask.dataframe as dd
-# from dask.distributed import progress
-# from dask.distributed import Client
-# from dask.diagnostics import ProgressBar
-#from retrying import retry
-import fiona
-import re
-import s3fs
-
-#need to mamba install gdal, earthaccess 
-#pip install pystac_client, richdem, planetary_computer, dask, distributed, retrying
 
 #connecting to AWS
 import warnings; warnings.filterwarnings("ignore")
@@ -93,7 +57,7 @@ else:
     
 #set multiprocessing limits
 CPUS = len(os.sched_getaffinity(0))
-CPUS = int((CPUS/2)-2)
+CPUS = max(1, int((CPUS/2)-2))
     
 
 def row_snotel(row, distance_cache, nearest_snotel, snotel_gdf, n):
@@ -188,18 +152,17 @@ def fetch_snotel_sites_for_cellids(region, output_res):
     mask = snotel_file['station_id'].isin(GroundMeasures.columns.tolist())
     snotel_file = snotel_file[mask]
 
-    ASO_meta_loc_DF = pd.DataFrame()
-
-    #add new prediction location here at this step - 
-    #will need to make grid for RegionVal.pkl. 
+    #add new prediction location here at this step -
+    #will need to make grid for RegionVal.pkl.
     #build in method for adding to existing dictionary rather than rerunning for entire region...
     print('Loading all Geospatial prediction/observation files and concatenating into one dataframe')
-    for aso_swe_file in tqdm_notebook(os.listdir(aso_swe_files_folder_path)):
+    frames = []
+    for aso_swe_file in tqdm(os.listdir(aso_swe_files_folder_path)):
         try:
-            aso_file = pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file))
-            ASO_meta_loc_DF = pd.concat([ASO_meta_loc_DF, aso_file])
-        except:
-            print(f"OSError: Corrupt brotli compressed data for {aso_swe_file}, skipping")
+            frames.append(pd.read_parquet(os.path.join(aso_swe_files_folder_path, aso_swe_file)))
+        except Exception as e:
+            print(f"OSError: Corrupt brotli compressed data for {aso_swe_file}, skipping ({e})")
+    ASO_meta_loc_DF = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
     
     print('Identifying unique sites to create geophysical information dataframe') 
@@ -219,14 +182,10 @@ def fetch_snotel_sites_for_cellids(region, output_res):
 
     print('converting to geodataframe')
     aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['cen_lon'], ASO_meta_loc_DF['cen_lat'])]
-    aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry)
+    aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry, crs='EPSG:4326')
 
     snotel_geometry = [Point(xy) for xy in zip(snotel_file['longitude'], snotel_file['latitude'])]
-    snotel_gdf = gpd.GeoDataFrame(snotel_file, geometry=snotel_geometry)
-
-    print('Processing snotel geometry')
-    snotel_geometry = [Point(xy) for xy in zip(snotel_file['longitude'], snotel_file['latitude'])]
-    snotel_gdf = gpd.GeoDataFrame(snotel_file, geometry=snotel_geometry)
+    snotel_gdf = gpd.GeoDataFrame(snotel_file, geometry=snotel_geometry, crs='EPSG:4326')
 
     # Calculating nearest SNOTEL sites
     calculate_nearest_snotel(region,aso_gdf, snotel_gdf,output_res, n=6)
@@ -242,7 +201,7 @@ def GeoSpatial(region, output_res):
 
     print(f"Converting to geodataframe")
     aso_geometry = [Point(xy) for xy in zip(ASO_meta_loc_DF['cen_lon'], ASO_meta_loc_DF['cen_lat'])]
-    aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry)
+    aso_gdf = gpd.GeoDataFrame(ASO_meta_loc_DF, geometry=aso_geometry, crs='EPSG:4326')
 
     return aso_gdf
 
@@ -272,9 +231,9 @@ def process_single_location(args):
         asp   = round(float(aspect_arr[y_idx, x_idx]))
         asp_w = round(float(-np.sin(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
         asp_n = round(float( np.cos(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
-    except Exception:
+    except Exception as e:
         elev, slop, asp, asp_w, asp_n = np.nan, np.nan, np.nan, np.nan, np.nan
-        print(f"{cell_id} does not have copernicus DEM data, manual input")
+        print(f"{cell_id} does not have copernicus DEM data, manual input ({e})")
 
     return cell_id, elev, slop, asp, asp_w, asp_n
 
@@ -287,26 +246,28 @@ def _process_tile(args):
         index_id = DEMs.loc[tile_id]['sliceID']
         signed_asset = planetary_computer.sign(tiles[int(index_id)].assets["data"])
         elevation = rxr.open_rasterio(signed_asset.href)
+        try:
+            # Compute slope/aspect once for the whole tile
+            tilearray  = np.around(elevation.values[0]).astype(float)
+            grad_y, grad_x = gradient(tilearray)
+            slope_arr  = np.sqrt(grad_x**2 + grad_y**2)
+            aspect_arr = (-rad2deg(arctan2(-grad_y, grad_x)) + 270) % 360
 
-        # Compute slope/aspect once for the whole tile
-        tilearray  = np.around(elevation.values[0]).astype(float)
-        grad_y, grad_x = gradient(tilearray)
-        slope_arr  = np.sqrt(grad_x**2 + grad_y**2)
-        aspect_arr = (-rad2deg(arctan2(-grad_y, grad_x)) + 270) % 360
+            transformer = Transformer.from_crs("EPSG:4326", elevation.rio.crs, always_xy=True)
 
-        transformer = Transformer.from_crs("EPSG:4326", elevation.rio.crs, always_xy=True)
+            for _, row in group_df.iterrows():
+                xx, yy = transformer.transform(row['cen_lon'], row['cen_lat'])
+                x_idx = np.argmin(np.abs(elevation.x.values - xx))
+                y_idx = np.argmin(np.abs(elevation.y.values - yy))
 
-        for _, row in group_df.iterrows():
-            xx, yy = transformer.transform(row['cen_lon'], row['cen_lat'])
-            x_idx = np.argmin(np.abs(elevation.x.values - xx))
-            y_idx = np.argmin(np.abs(elevation.y.values - yy))
-
-            elev  = round(float(tilearray[y_idx, x_idx]))
-            slop  = round(float(slope_arr[y_idx, x_idx]))
-            asp   = round(float(aspect_arr[y_idx, x_idx]))
-            asp_w = round(float(-np.sin(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
-            asp_n = round(float( np.cos(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
-            results.append((row['cell_id'], elev, slop, asp, asp_w, asp_n))
+                elev  = round(float(tilearray[y_idx, x_idx]))
+                slop  = round(float(slope_arr[y_idx, x_idx]))
+                asp   = round(float(aspect_arr[y_idx, x_idx]))
+                asp_w = round(float(-np.sin(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
+                asp_n = round(float( np.cos(aspect_arr[y_idx, x_idx] * np.pi / 180)), 3)
+                results.append((row['cell_id'], elev, slop, asp, asp_w, asp_n))
+        finally:
+            elevation.close()
 
     except Exception as e:
         print(f"Error for tile {tile_id}: {e}")
@@ -350,9 +311,12 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
 
     all_results = []
     with cf.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(_process_tile, tg) for tg in tile_groups]
+        futures = {executor.submit(_process_tile, tg): tg[0] for tg in tile_groups}
         for future in tqdm(cf.as_completed(futures), total=len(futures), desc="DEM tiles"):
-            all_results.extend(future.result())
+            try:
+                all_results.extend(future.result())
+            except Exception as e:
+                print(f"Worker error ({futures[future]}): {e}")
 
     meta = pd.DataFrame(all_results, columns=['cell_id', 'Elevation_m', 'Slope_Deg', 'Aspect_Deg', 'Aspect_W', 'Aspect_N'])
     meta.set_index('cell_id', inplace=True)
@@ -361,11 +325,11 @@ def extract_terrain_data_threaded(metadata_df, region, output_res):
 
     dfpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution"
     os.makedirs(dfpath, exist_ok=True)
-    metadata_df.pop('geometry')
-    pq.write_table(pa.Table.from_pandas(metadata_df),
+    metadata_df_out = metadata_df.drop(columns='geometry')
+    pq.write_table(pa.Table.from_pandas(metadata_df_out),
                    f"{dfpath}/{region}_metadata.parquet", compression='BROTLI')
 
-    return metadata_df, DEMs, tiles
+    return metadata_df_out, DEMs, tiles
 
 
 def add_geospatial_threaded(region, output_res):
@@ -382,18 +346,24 @@ def add_geospatial_threaded(region, output_res):
 
     #Get Geospatial meta data
     print(f"Loading geospatial metadata for grids in {region}")
-    aso_gdf = pd.read_parquet(f"{TrainingDFpath}/{region}_metadata.parquet")
+    aso_gdf = pd.read_parquet(f"{TrainingDFpath}/{region}_metadata.parquet").reset_index()
 
     #create dataframe
     print(f"Loading all available processed ASO observations for {region} at {output_res}M resolution")
     aso_swe_files = [filename for filename in os.listdir(f"{TrainingDFpath}/Obsdf")]
     
     print(f"Concatenating {len(aso_swe_files)} with geospatial data...")
-    with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
-        # Start the load operations and mark each future with its process function
-        [executor.submit(add_geospatial_single, (f"{TrainingDFpath}/Obsdf", aso_swe_files[i], aso_gdf,GeoObsdfs)) for i in tqdm_notebook(range(len(aso_swe_files)))]
-        
-        print(f"Job complete for connecting obs with geospatial data, the files can be found in {GeoObsdfs}")
+    with cf.ProcessPoolExecutor(max_workers=CPUS) as executor:
+        futures = {
+            executor.submit(add_geospatial_single, (f"{TrainingDFpath}/Obsdf", f, aso_gdf, GeoObsdfs)): f
+            for f in aso_swe_files
+        }
+        for future in tqdm(cf.as_completed(futures), total=len(futures)):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Worker error ({futures[future]}): {e}")
+    print(f"Job complete for connecting obs with geospatial data, the files can be found in {GeoObsdfs}")
 
 
 def add_geospatial_single(args):

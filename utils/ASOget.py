@@ -1,7 +1,6 @@
 # Import packages
 # Dataframe Packages
 import numpy as np
-import xarray as xr
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -9,52 +8,47 @@ import concurrent.futures as cf
 
 # Vector Packages
 import geopandas as gpd
-import shapely
-from shapely import wkt
 from shapely.geometry import Point, Polygon
 from pyproj import CRS, Transformer
 
 # Raster Packages
 import rioxarray as rxr
 import rasterio
-from rasterio.mask import mask
 from rioxarray.merge import merge_arrays
-import rasterstats as rs
+# import rasterstats as rs
 from osgeo import gdal
 from osgeo import gdalconst
 
 # Data Access Packages
-import earthaccess as ea
+# import earthaccess as ea
 # import h5py
-import pickle
-from pystac_client import Client
+# import pickle
+# from pystac_client import Client
 #import richdem as rd
-import planetary_computer
-from planetary_computer import sign
+# import planetary_computer
+# from planetary_computer import sign
 
 # General Packages
 import os
 import re
-import shutil
-import math
 from datetime import datetime
 import glob
-from pprint import pprint
-from typing import Union
-from pathlib import Path
+# from pprint import pprint
+# from typing import Union
+# from pathlib import Path
 from tqdm._tqdm_notebook import tqdm_notebook
 from tqdm.auto import tqdm
 
-import requests
+# import requests
 # import dask
 # import dask.dataframe as dd
 # from dask.distributed import progress
 # from dask.distributed import Client
 # from dask.diagnostics import ProgressBar
 #from retrying import retry
-import fiona
-import re
-import s3fs
+# import fiona
+# import re
+# import s3fs
 
 #need to mamba install gdal, earthaccess 
 #pip install pystac_client, richdem, planetary_computer, dask, distributed, retrying

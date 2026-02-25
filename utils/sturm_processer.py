@@ -17,7 +17,7 @@ def get_Sturm_data():
     url = "https://daacdata.apps.nsidc.org/pub/DATASETS/nsidc0768_global_seasonal_snow_classification_v01/SnowClass_NA_300m_10.0arcsec_2021_v01.0.tif"
     output_path = f"{HOME}/data/SnowClassification/"
     file = "SnowClass_NA_300m_10.0arcsec_2021_v01.0.tif" 
-    if not os.path.exists(output_path):
+    if not os.path.exists(f'{output_path}/{file}'):
         os.makedirs(output_path, exist_ok=True)
         try:
             with requests.get(url, stream=True) as response:
