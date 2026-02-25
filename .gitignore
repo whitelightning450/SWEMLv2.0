@@ -9,6 +9,7 @@ Model/.ipynb_checkpoints/
 *.pkl
 *.parquet
 /Figures/*
+/data/*
 *.pyc
 *.tif
 *.tif.xml

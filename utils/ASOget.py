@@ -1,7 +1,6 @@
 # Import packages
 # Dataframe Packages
 import numpy as np
-import xarray as xr
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -9,50 +8,47 @@ import concurrent.futures as cf
 
 # Vector Packages
 import geopandas as gpd
-import shapely
-from shapely import wkt
 from shapely.geometry import Point, Polygon
 from pyproj import CRS, Transformer
 
 # Raster Packages
 import rioxarray as rxr
 import rasterio
-from rasterio.mask import mask
 from rioxarray.merge import merge_arrays
-import rasterstats as rs
+# import rasterstats as rs
 from osgeo import gdal
 from osgeo import gdalconst
 
 # Data Access Packages
-import earthaccess as ea
+# import earthaccess as ea
 # import h5py
-import pickle
-from pystac_client import Client
+# import pickle
+# from pystac_client import Client
 #import richdem as rd
-import planetary_computer
-from planetary_computer import sign
+# import planetary_computer
+# from planetary_computer import sign
 
 # General Packages
 import os
 import re
-import shutil
-import math
 from datetime import datetime
 import glob
-from pprint import pprint
-from typing import Union
-from pathlib import Path
+# from pprint import pprint
+# from typing import Union
+# from pathlib import Path
 from tqdm._tqdm_notebook import tqdm_notebook
-import requests
+from tqdm.auto import tqdm
+
+# import requests
 # import dask
 # import dask.dataframe as dd
 # from dask.distributed import progress
 # from dask.distributed import Client
 # from dask.diagnostics import ProgressBar
 #from retrying import retry
-import fiona
-import re
-import s3fs
+# import fiona
+# import re
+# import s3fs
 
 #need to mamba install gdal, earthaccess 
 #pip install pystac_client, richdem, planetary_computer, dask, distributed, retrying
@@ -216,535 +212,155 @@ class ASODownload(ASODataTool):
             return self.bounding_box
         except ValueError:
             print("Invalid input. Please enter a valid index.")
-    
-
-
-class ASODataProcessing:
-    
-    @staticmethod
-    def processing_tiff(region, input_file, output_path, output_res):
-        try:
-            date = os.path.splitext(input_file)[0].split("_")[-1]
-            
-            # Define the output file path
-            output_folder = os.path.join(output_path, f"{region}/ASO_Processed_{output_res}M_tif")
-            os.makedirs(output_folder, exist_ok=True)
-            output_file = os.path.join(output_folder, f"ASO_{output_res}M_{date}.tif")
-    
-            ds = gdal.Open(input_file)
-            if ds is None:
-                print(f"Failed to open '{input_file}'. Make sure the file is a valid GeoTIFF file.")
-                return None
-            
-            # Reproject and resample, the Res # needs to be in degrees, ~111,111m to 1 degree
-            Res = output_res/111111
-            gdal.Warp(output_file, ds, dstSRS="EPSG:4326", xRes=Res, yRes=-Res, resampleAlg="bilinear")
-            print('gdal done')
-            # Read the processed TIFF file using rasterio
-            rds = rxr.open_rasterio(output_file)
-            print('rds made')
-            rds = rds.squeeze().drop("spatial_ref").drop("band")
-            rds.name = "data"
-            df = rds.to_dataframe().reset_index()
-            return df
-    
-        except Exception as e:
-            print(f"An error occurred: {str(e)}")
-            return None
-        
-        
-    def processing_tiff(self, input_file, output_path, output_res, region):
-        try:
-            date = os.path.splitext(input_file)[0].split("_")[-1]
-            
-            # Define the output file path
-            output_folder = os.path.join(output_path, f"{region}/Processed_{output_res}M_SWE")
-            os.makedirs(output_folder, exist_ok=True)
-            output_file = os.path.join(output_folder, f"ASO_{output_res}M_{date}.tif")
-
-            ds = gdal.Open(input_file)
-            if ds is None:
-                print(f"Failed to open '{input_file}'. Make sure the file is a valid GeoTIFF file.")
-                return None
-            
-            # Reproject and resample, the Res # needs to be in degrees 0.00009 is equivalent to ~100 m
-            Res = output_res/111111
-            
-            gdal.Warp(output_file, ds, dstSRS="EPSG:4326", xRes=Res, yRes=-Res, resampleAlg="bilinear")
-
-            # Read the processed TIFF file using rasterio
-            rds = rxr.open_rasterio(output_file)
-            rds = rds.squeeze().drop("spatial_ref").drop("band")
-            rds.name = "data"
-            df = rds.to_dataframe().reset_index()
-            return df
-        
-        except Exception as e:
-            print(f"An error occurred: {str(e)}")
-            return None
-        
-    def region_sort(self,input_file, region):
-        try:
-            dir = f"{HOME}/data/ASO/"
-            output_folder = os.path.join(dir, f"{region}/Raw_ASO_Data")
-            os.makedirs(output_folder, exist_ok=True)
-            # print(output_folder)
-            ## clean up file name; retrieve & reformat date
-            date = next(element for element in os.path.splitext(input_file)[0].split("_") if element.startswith('20'))
-            if type(date[4]) == str:
-                date_singleday = os.path.splitext(date)[0].split("-")[0]
-                datetime_object = datetime.strptime(date_singleday, "%Y%b%d")
-                date = datetime_object.strftime('%Y%m%d')
-            basin = os.path.splitext(input_file)[0].split("_")[1]
-            dst = f"{output_folder}/ASO_50M_SWE_{basin}_{date}.tif"
-            BBox = ASODataTool.get_bounding_box_list(region)
-
-            #open file, reproject to WGS84, retrieve file extent
-            rds = rxr.open_rasterio(input_file)
-            rds_4326 = rds.rio.reproject("EPSG:4326")
-            xmin = np.float64(np.min(rds_4326['x']))
-            xmax = np.float64(np.max(rds_4326['x']))
-            ymin = np.float64(np.min(rds_4326['y']))
-            ymax = np.float64(np.max(rds_4326['y']))
-            rds_bbox = [xmin,ymin,xmax,ymax]
-
-            #check if corners of file extent are within region bbox:
-            if ((xmin > BBox[0] and xmin < BBox[2]) or (xmax > BBox[0] and xmax < BBox[2])):
-                if ((ymin > BBox[1] and ymin < BBox[3]) or (ymax > BBox[1] and ymax < BBox[3])):
-                    print(region)
-                    #save file w/ original projection in Raw_ASO_Data directory in correct region
-                    shutil.copy(input_file, dst)
-            # else:
-                # print('no match')         
-        except Exception as e:
-            print(f"Error: {str(e)}")
-    
-    def average_duplicates(self, cell_id, aso_file, siteave_dic):
-        sitex = aso_file[aso_file['cell_id'] == cell_id]
-        mean_lat = np.round(np.mean(sitex['cen_lat']),3)
-        mean_lon = np.round(np.mean(sitex['cen_lon']),3)
-        mean_swe = np.round(np.mean(sitex['swe_m']),2)
-
-        tempdic = {'cell_id': cell_id,
-                'cen_lat': mean_lat,
-                'cen_lon': mean_lon,
-                'swe_m': mean_swe
-        }
-
-        sitedf = pd.DataFrame(tempdic, index = [cell_id])
-        siteave_dic[cell_id] = sitedf
-            
-
-    def process_single_ASO_file(self, args):
-            
-        folder_path, tiff_filename, output_res, region, dir = args
-        # Open the TIFF file
-        tiff_filepath = os.path.join(folder_path, tiff_filename)
-        df = self.processing_tiff(tiff_filepath, dir, output_res, region)
-
-        date = os.path.splitext(tiff_filename)[0].split("_")[-1]
-
-        #process file for more efficient saving and fix column headers
-        df.rename(columns = {'x': 'cen_lon', 'y':'cen_lat', 'data':'swe_m'}, inplace = True)
-        df = df[df['swe_m'] >=0]
-        #make cell_id for each site
-        df['cell_id'] = df.apply(lambda row: self.make_cell_id(region, output_res, row['cen_lat'], row['cen_lon']), axis=1)
-
-        #get unique cell ids
-        cell_ids = df.cell_id.unique()
-
-        if len(df) > len(cell_ids):
-            siteave_dic = {}
-            print(f"Taking {len(df)} observations down to {len(cell_ids)} unique cell ids and taking the spatial average to get {output_res} m resolution for timestep {date}")
-            [self.average_duplicates(cell_id, df, siteave_dic) for cell_id in cell_ids]
-            df = pd.concat(siteave_dic)
-
-        if df is not None:
-            # Define the parquet filename and folder
-            parquet_filename = f"ASO_{output_res}M_SWE_{date}.parquet"
-            parquet_folder = os.path.join(dir, f"{region}/{output_res}M_SWE_parquet")
-            os.makedirs(parquet_folder, exist_ok=True)
-            parquet_filepath = os.path.join(parquet_folder, parquet_filename)
-
-            # Save the DataFrame as a parquet file
-            #Convert DataFrame to Apache Arrow Table
-            table = pa.Table.from_pandas(df)
-            # Parquet with Brotli compression
-            pq.write_table(table, parquet_filepath, compression='BROTLI')
-        
-            
-    def convert_tiff_to_parquet_multiprocess(self, input_folder, output_res, region):
-
-        print('Converting .tif to parquet')
-        # dir = f"{HOME}/SWEMLv2.0/data/ASO/"
-        dir = f"{HOME}/data/ASO/"
-        folder_path = os.path.join(dir, input_folder)
-        
-        # Check if the folder exists and is not empty
-        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
-            print(f"The folder '{folder_path}' does not exist.")
-            return
-        
-        if not os.listdir(folder_path):
-            print(f"The folder '{input_folder}' is empty.")
-            return
-
-        tiff_files = [filename for filename in os.listdir(folder_path) if filename.endswith(".tif")]
-        print(f"Converting {len(tiff_files)} ASO tif files to parquet")
-        
-        # Create parquet files from TIFF files
-        with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
-        # Start the load operations and mark each future with its process function
-            [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, region, dir)) for i in tqdm_notebook(range(len(tiff_files)))]
-
-        print('Checking to make sure all files successfully converted...')
-        parquet_folder = os.path.join(dir, f"{region}/{output_res}M_SWE_parquet")
-        for parquet_file in tqdm_notebook(os.listdir(parquet_folder)):
-            try:
-                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-            except:# add x number of attempts
-                print(f"Bad file conversion for {parquet_file}, attempting to reprocess")
-                tiff_file = f"ASO_50M_SWE_USCACE_{parquet_file[-16:-8]}.tif"
-                print(tiff_file)
-                # redo function to convert tiff to parquet
-                args = folder_path, tiff_file, output_res, region, dir
-                self.process_single_ASO_file(args)
-                try:
-                    print('Attempt 2')
-                    # try to reloade again
-                    aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                    print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                except:
-                    # redo function to convert tiff to parquet
-                    self.process_single_ASO_file(args)
-                    try:
-                        print('Attempt 3')
-                        # try to reloade again
-                        aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                        print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                    except:
-                        # redo function to convert tiff to parquet
-                        self.process_single_ASO_file(args)
-                        try:
-                            print('Attempt 4')
-                            # try to reloade again
-                            aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                            print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                        except:
-                            # redo function to convert tiff to parquet
-                            self.process_single_ASO_file(args)
-                            try:
-                                print('Attempt 5')
-                                # try to reloade again
-                                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                                print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                            except:
-                                # redo function to convert tiff to parquet
-                                self.process_single_ASO_file(args)
                                 
                                 
-class ASODataProcessing_v2: #Revised script to work with 2020-2024 data put into Water Years rather than regions
+class ASODataProcessing_v2: 
+    #Revised script to work with 2020-2024 data put into Water Years rather than regions
+    """
+    Converts raw ASO GeoTIFF files to Brotli-compressed Parquet.
+
+    Internally reprojects to EPSG:5070 (NAD83 Conus Albers Equal Area) so
+    resampling uses a truly square pixel grid in meters, then converts pixel
+    centers back to WGS84 for downstream compatibility.
+
+    Output parquet schema:
+        cell_id : str    "{res}M_{cen_lat}_{cen_lon}"
+        cen_lat : float  WGS84 latitude  (degrees, rounded to 3 dp)
+        cen_lon : float  WGS84 longitude (degrees, rounded to 3 dp)
+        swe_m   : float  snow water equivalent (meters)
+
+    Handles both filename conventions:
+        Pre-2020:  ASO_50M_SWE_{BASIN}_{YYYYMMDD}.tif
+        2020+:     ASO_{Basin}[_Type]_{YYYY}{Mon}{D[-range]}_swe_50m.tif
+                   (multi-day ranges use the first day)
+    """
+
+    @staticmethod
+    def parse_filename(filename):
+        """Returns (basin, date_str) where date_str is YYYYMMDD."""
+        stem = os.path.splitext(filename)[0]
+        parts = stem.split("_")
+
+        # Pre-2020: ASO_50M_SWE_{BASIN}_{YYYYMMDD}
+        if parts[1] == '50M':
+            return parts[3], parts[4]
+
+        # 2020+: find element starting with 4-digit year followed by letters
+        basin = parts[1]
+        date_part = next(p for p in parts if re.match(r'^20\d{2}[A-Za-z]', p))
+        date_part = date_part.split('-')[0]  # first day of any multi-day range
+        yr = date_part[:4]
+        month_str = re.search(r'[A-Za-z]+', date_part[4:]).group()
+        day_str   = re.search(r'\d+',       date_part[4:]).group()
+        month_num = datetime.strptime(month_str[:3], "%b").month
+        return basin, f"{yr}{month_num:02d}{int(day_str):02d}"
     
     @staticmethod
-    def processing_tiff(WY, input_file, output_path, output_res):
-        try:
-            print('Using function file')
-            #code block for converting input file string to date to match WY2013-2019 format
-            #2020-2024 is formatted differently
-            if WY > 2019:
-
-                # if input_file[-7:-4] == '50m':
-                #     date = os.path.splitext(input_file)[0].split("_")[-3]
-                # if input_file[-7:-4] == 'agg':
-                #     date = os.path.splitext(input_file)[0].split("_")[-4]
-                date = next(element for element in os.path.splitext(input_file)[0].split("_") if element.startswith('20'))
-
-                if '-' in date:
-                    date = date.split("-")[0]
-
-                yr = date[:4]
-                m = str(datetime.strptime(date[4:7], "%b").month)
-                d = date[7:]
-
-                if len(m) == 1:
-                    m = f"0{m}"
-                if len(d) == 1:
-                    d = f"0{d}"
-
-                date = f"{yr}{m}{d}"
-
-                #get location
-                loc = os.path.splitext(input_file)[0].split("_")[1]
-            #formatting for <2020
-            else:
-                date = os.path.splitext(input_file)[0].split("_")[-1]
-                loc = os.path.splitext(input_file)[0].split("_")[-2]
-            # Define the output file path
-            output_folder = os.path.join(output_path, f"{WY}/ASO_Processed_{output_res}M_tif")
-            os.makedirs(output_folder, exist_ok=True)
-            output_file = os.path.join(output_folder, f"ASO_{loc}_{output_res}M_{date}.tif")
+    def make_cell_id(output_res, cen_lat, cen_lon):
+        return f"{output_res}M_{round(cen_lat, 6)}_{round(cen_lon, 6)}"
     
-            ds = gdal.Open(input_file)
-            if ds is None:
-                print(f"Failed to open '{input_file}'. Make sure the file is a valid GeoTIFF file.")
-                return None
-            
-            # Reproject and resample, the Res # needs to be in degrees, ~111,111m to 1 degree
-            Res = output_res/111111
-            gdal.Warp(output_file, ds, dstSRS="EPSG:4326", xRes=Res, yRes=-Res, resampleAlg="bilinear")
-            print('gdal done')
-            # Read the processed TIFF file using rasterio
-            rds = rxr.open_rasterio(output_file)
-            print('rds made')
-            rds = rds.squeeze().drop("spatial_ref").drop("band")
-            rds.name = "data"
-            df = rds.to_dataframe().reset_index()
-            return df
-    
-        except Exception as e:
-            print(f"An error occurred: {str(e)}")
-            return None
-        
-        
-    def processing_tiff(self, folder_path, tiff_filename, output_path, output_res, WY):
-        # Open the TIFF file
-        input_file = os.path.join(folder_path, tiff_filename)
-        try:
-            #code block for converting input file string to date to match WY2013-2019 format
-                   #2020-2024 is formatted differently
-            if int(WY) > 2019:
-
-                # if input_file[-7:-4] == '50m':
-                #     date = os.path.splitext(input_file)[0].split("_")[-3]
-                # if input_file[-7:-4] == 'agg':
-                #     date = os.path.splitext(input_file)[0].split("_")[-4]
-                date = next(element for element in os.path.splitext(tiff_filename)[0].split("_") if element.startswith('20'))
-
-                if '-' in date:
-                    date = date.split("-")[0]
-
-                yr = date[:4]
-                m = str(datetime.strptime(date[4:7], "%b").month)
-                d = date[7:]
-
-                if len(m) == 1:
-                    m = f"0{m}"
-                if len(d) == 1:
-                    d = f"0{d}"
-
-                date = f"{yr}{m}{d}"
-
-                #get location
-                # print(os.path.splitext(input_file)[0].split("_"))
-                loc = os.path.splitext(tiff_filename)[0].split("_")[1]
-            #formatting for <2020
-            else:
-                date = os.path.splitext(tiff_filename)[0].split("_")[-1]
-                loc = os.path.splitext(tiff_filename)[0].split("_")[-2]
-            # print(WY,date,loc)
-            
-            # Define the output file path
-            output_folder = os.path.join(output_path, f"{WY}/Processed_{output_res}M_SWE")
-            os.makedirs(output_folder, exist_ok=True)
-            output_file = os.path.join(output_folder, f"ASO_{loc}_{output_res}M_{date}.tif")
-            
-
-            ds = gdal.Open(input_file)
-            if ds is None:
-                print(f"Failed to open '{input_file}'. Make sure the file is a valid GeoTIFF file.")
-                return None
-            
-            # Reproject and resample, the Res # needs to be in degrees 0.00009 is equivalent to ~100 m
-            Res = output_res/111111
-            
-            gdal.Warp(output_file, ds, dstSRS="EPSG:4326", xRes=Res, yRes=-Res, resampleAlg="bilinear")
-
-            # Read the processed TIFF file using rasterio
-            rds = rxr.open_rasterio(output_file)
-            rds = rds.squeeze().drop("spatial_ref").drop("band")
-            rds.name = "data"
-            df = rds.to_dataframe().reset_index()
-            return df
-        
-        except Exception as e:
-            print(f"An error occurred: {str(e)}")
-            return None
-    
-    def average_duplicates(self, cell_id, aso_file, siteave_dic):
-        sitex = aso_file[aso_file['cell_id'] == cell_id]
-        mean_lat = np.round(np.mean(sitex['cen_lat']),3)
-        mean_lon = np.round(np.mean(sitex['cen_lon']),3)
-        mean_swe = np.round(np.mean(sitex['swe_m']),2)
-
-        tempdic = {'cell_id': cell_id,
-                'cen_lat': mean_lat,
-                'cen_lon': mean_lon,
-                'swe_m': mean_swe
-        }
-
-        sitedf = pd.DataFrame(tempdic, index = [cell_id])
-        siteave_dic[cell_id] = sitedf
-            
-
     def process_single_ASO_file(self, args):
-            
+        """Reproject one ASO tif to Albers, resample, convert back to WGS84, save as parquet."""
         folder_path, tiff_filename, output_res, WY, dir = args
-        
-        df = self.processing_tiff(folder_path,tiff_filename, dir, output_res, WY)
-        # print(tiff_filename)
-        #2020-2024 is formatted differently
-        if int(WY) > 2019:
+        tiff_path = os.path.join(folder_path, tiff_filename)
 
-            if tiff_filename[-7:-4] == '50m':
-                date = os.path.splitext(tiff_filename)[0].split("_")[-3]
-            if tiff_filename[-7:-4] == 'agg':
-                date = os.path.splitext(tiff_filename)[0].split("_")[-4]
+        try:
+            basin, date = self.parse_filename(tiff_filename)
+        except Exception as e:
+            print(f"Could not parse '{tiff_filename}': {e}")
+            return
 
-            if '-' in date:
-                date = date.split("-")[0]
+        try:
+            # Reproject to Albers Equal Area — pixel size is true square meters
+            rds = rxr.open_rasterio(tiff_path, masked=True)
+            rds_albers = rds.rio.reproject(
+                "EPSG:5070",
+                resolution=output_res,
+                resampling=rasterio.enums.Resampling.bilinear,
+            ).squeeze(drop=True)
+            rds_albers.name = "swe_m"
 
-            yr = date[:4]
-            m = str(datetime.strptime(date[4:7], "%b").month)
-            d = date[7:]
+            data = rds_albers.values                  # 2D numpy array, NaN where nodata
+            xs   = rds_albers.x.values                # 1D array of Albers x coords
+            ys   = rds_albers.y.values                # 1D array of Albers y coords
 
-            if len(m) == 1:
-                m = f"0{m}"
-            if len(d) == 1:
-                d = f"0{d}"
+            # Build pixel mask 
+            xx, yy = np.meshgrid(xs, ys)
+            mask = np.isfinite(data) & (data >= 0)
+            if not mask.any():
+                print(f"No valid SWE data in {tiff_filename}")
+                return
 
-            date = f"{yr}{m}{d}"
+            transformer = Transformer.from_crs("EPSG:5070", "EPSG:4326", always_xy=True)
+            lon, lat = transformer.transform(xx[mask], yy[mask])
 
-            #get location
-            loc = os.path.splitext(tiff_filename)[0].split("_")[1]
-        #formatting for <2020
-        else:
-            date = os.path.splitext(tiff_filename)[0].split("_")[-1]
-            loc = os.path.splitext(tiff_filename)[0].split("_")[-2]
-                
+            df = pd.DataFrame({
+                'cen_lat': lat.round(6),
+                'cen_lon': lon.round(6),
+                'swe_m':   data[mask].round(4),
+            })
+            df['cell_id'] = df.apply(
+                lambda row: self.make_cell_id(output_res, row['cen_lat'], row['cen_lon']), axis=1
+            )
+            df = df[['cell_id', 'cen_lat', 'cen_lon', 'swe_m']]
 
-        #process file for more efficient saving and fix column headers
-        df.rename(columns = {'x': 'cen_lon', 'y':'cen_lat', 'data':'swe_m'}, inplace = True)
-        df = df[df['swe_m'] >=0]
-        #make cell_id for each site
-        df['cell_id'] = df.apply(lambda row: self.make_cell_id(WY, output_res, row['cen_lat'], row['cen_lon']), axis=1)
-
-        #get unique cell ids
-        cell_ids = df.cell_id.unique()
-
-        if len(df) > len(cell_ids):
-            siteave_dic = {}
-            print(f"Taking {len(df)} observations down to {len(cell_ids)} unique cell ids and taking the spatial average to get {output_res} m resolution for timestep {date}")
-            [self.average_duplicates(cell_id, df, siteave_dic) for cell_id in cell_ids]
-            df = pd.concat(siteave_dic)
-
-        if df is not None:
-            # Define the parquet filename and folder
-            parquet_filename = f"ASO_{loc}_{output_res}M_SWE_{date}.parquet"
             parquet_folder = os.path.join(dir, f"{WY}/{output_res}M_SWE_parquet")
             os.makedirs(parquet_folder, exist_ok=True)
-            parquet_filepath = os.path.join(parquet_folder, parquet_filename)
+            pq.write_table(
+                pa.Table.from_pandas(df),
+                os.path.join(parquet_folder, f"ASO_{basin}_{output_res}M_SWE_{date}.parquet"),
+                compression='BROTLI',
+            )
+        except Exception as e:
+            print(f"Error processing {tiff_filename}: {e}")
 
-            # Save the DataFrame as a parquet file
-            #Convert DataFrame to Apache Arrow Table
-            table = pa.Table.from_pandas(df)
-            # Parquet with Brotli compression
-            pq.write_table(table, parquet_filepath, compression='BROTLI')
-        
+    def _process_wrapper(self, args):
+        self.process_single_ASO_file(args)
             
     def convert_tiff_to_parquet_multiprocess(self, input_folder, output_res, WY):
-
-        print('Converting .tif to parquet')
-        # dir = f"{HOME}/SWEMLv2.0/data/ASO/"
         aso_dir = f"{HOME}/data/ASO/"
         folder_path = os.path.join(aso_dir, input_folder)
-        
-        # Check if the folder exists and is not empty
-        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
-            print(f"The folder '{folder_path}' does not exist.")
-            return
-        
-        if not os.listdir(folder_path):
-            print(f"The folder '{input_folder}' is empty.")
+
+        if not os.path.isdir(folder_path):
+            print(f"Folder not found: {folder_path}")
             return
 
-        tiff_files = [filename for filename in os.listdir(folder_path) if filename.endswith(".tif")]
-        print(f"Converting {len(tiff_files)} ASO tif files to parquet")
-        
-        # Create parquet files from TIFF files
-        with cf.ProcessPoolExecutor(max_workers=CPUS) as executor: 
-        # Start the load operations and mark each future with its process function
-            [executor.submit(self.process_single_ASO_file, (folder_path, tiff_files[i], output_res, WY, aso_dir)) for i in tqdm_notebook(range(len(tiff_files)))]
-        # for i in tqdm_notebook(range(len(tiff_files))):
-        #     self.process_single_ASO_file((folder_path, tiff_files[i], output_res, WY, aso_dir))
+        tiff_files = [f for f in os.listdir(folder_path) if f.endswith('.tif')]
+        if not tiff_files:
+            print(f"No .tif files found in {folder_path}")
+            return
 
-        print('Checking to make sure all files successfully converted...')
+        print(f"Converting {len(tiff_files)} files  WY{WY}  {output_res}m resolution")
+        args_list = [
+            (folder_path, f, output_res, WY, aso_dir)
+            for f in tiff_files
+        ]
+
+        with cf.ProcessPoolExecutor(max_workers=CPUS) as executor:
+            futures = [executor.submit(self._process_wrapper, args) for args in args_list]
+            for future in tqdm(cf.as_completed(futures), total=len(futures), desc=f"WY{WY}"):
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Worker error: {e}")
+
+
         parquet_folder = os.path.join(aso_dir, f"{WY}/{output_res}M_SWE_parquet")
-        for parquet_file in tqdm_notebook(os.listdir(parquet_folder)):
+        failed = []
+        for pf in tqdm_notebook(os.listdir(parquet_folder), desc="Verifying"):
             try:
-                aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-            except:# add x number of attempts
-                print(f"Bad file conversion for {parquet_file}")
-                # print(f"Bad file conversion for {parquet_file}, attempting to reprocess")
-                # tiff_file = f"ASO_50M_SWE_USCACE_{parquet_file[-16:-8]}.tif"
-                # print(tiff_file)
-                # # redo function to convert tiff to parquet
-                # args = folder_path, tiff_file, output_res, WY, dir
-                # self.process_single_ASO_file(args)
-                # try:
-                #     print('Attempt 2')
-                #     # try to reloade again
-                #     aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                #     print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                # except:
-                #     # redo function to convert tiff to parquet
-                #     self.process_single_ASO_file(args)
-                #     try:
-                #         print('Attempt 3')
-                #         # try to reloade again
-                #         aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                #         print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                #     except:
-                #         # redo function to convert tiff to parquet
-                #         self.process_single_ASO_file(args)
-                #         try:
-                #             print('Attempt 4')
-                #             # try to reloade again
-                #             aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                #             print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                #         except:
-                #             # redo function to convert tiff to parquet
-                #             self.process_single_ASO_file(args)
-                #             try:
-                #                 print('Attempt 5')
-                #                 # try to reloade again
-                #                 aso_file = pd.read_parquet(os.path.join(parquet_folder, parquet_file))
-                #                 print(f"Bad file conversion for {tiff_file}, attempting to reprocess")
-                #             except:
-                #                 # redo function to convert tiff to parquet
-                #                 self.process_single_ASO_file(args)
+                pd.read_parquet(os.path.join(parquet_folder, pf))
+            except Exception:
+                failed.append(pf)
 
-                           
+        if failed:
+            print(f"{len(failed)} files failed verification: {failed}")
+        else:
+            print(f"All {len(os.listdir(parquet_folder))} parquet files verified.")                        
                 
     def create_polygon(self, row):
         return Polygon([(row['BL_Coord_Long'], row['BL_Coord_Lat']),
                         (row['BR_Coord_Long'], row['BR_Coord_Lat']),
                         (row['UR_Coord_Long'], row['UR_Coord_Lat']),
                         (row['UL_Coord_Long'], row['UL_Coord_Lat'])])
-    
-    #make cell_id
-    def make_cell_id(self,region, output_res, cen_lat, cen_lon):
-        #round lat/long to similar sites, may redue file size...
-        cen_lat = round(cen_lat,3) #rounding to 3 past the decimal, 100m =~0.001 degreest
-        cen_lon = round(cen_lon,3)
-        cell_id = f"{region}_{output_res}M_{cen_lat}_{cen_lon}"
-        return cell_id
-    
-        #make cell_id
-    def make_cell_id_v2(self,WY, output_res, cen_lat, cen_lon):
-        #round lat/long to similar sites, may redue file size...
-        cen_lat = round(cen_lat,3) #rounding to 3 past the decimal, 100m =~0.001 degreest
-        cen_lon = round(cen_lon,3)
-        cell_id = f"{WY}_{output_res}M_{cen_lat}_{cen_lon}"
-        return cell_id
-
     

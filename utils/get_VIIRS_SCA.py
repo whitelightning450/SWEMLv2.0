@@ -8,13 +8,11 @@ import zipfile
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-import netrc
 import concurrent.futures as cf
-from tqdm import tqdm
-from tqdm._tqdm_notebook import tqdm_notebook
+from tqdm.auto import tqdm
 import xarray as xr
 import shapely
-from datetime import datetime, date, timedelta
+from datetime import datetime
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -120,8 +118,15 @@ def augment_SCA_multiprocessing(region, output_res, threshold):
 
     #using ProcessPool here because of the python function used (e.g., not getting data but processing it)
     with cf.ProcessPoolExecutor(max_workers=CPUS) as executor:  #settting max works to 6 to not make NASA mad...
-        # Start the load operations and mark each future with its process function
-        [executor.submit(single_df_VIIRS, (GeoObsDF_files[i],GeoObsDF_path, VIIRSdata_path, ViirsGeoObsDF_path, threshold, output_res)) for i in range(len(GeoObsDF_files))]
+        futures = {
+            executor.submit(single_df_VIIRS, (f, GeoObsDF_path, VIIRSdata_path, ViirsGeoObsDF_path, threshold, output_res)): f
+            for f in GeoObsDF_files
+        }
+        for future in tqdm(cf.as_completed(futures), total=len(futures)):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Worker error ({futures[future]}): {e}")
 
     # for file in GeoObsDF_files:
     #     args = file,GeoObsDF_path, VIIRSdata_path, ViirsGeoObsDF_path, threshold, output_res
@@ -136,9 +141,6 @@ def single_df_VIIRS(args):
     print(f"{timestamp}, ")
 
     region_df = pd.read_parquet(os.path.join(GeoObsDF_path, GeoObsDF_file))
-    #round lat/long, literally no need for any higher spatial resolution than 0.001 degrees, as this is ~100 m
-    region_df['cen_lon'] =np.round(region_df['cen_lon'], 3)
-    region_df['cen_lat'] =np.round(region_df['cen_lat'], 3)
 
     geoRegionDF = gpd.GeoDataFrame(region_df, geometry=gpd.points_from_xy(region_df.cen_lon, region_df.cen_lat,
                                                                             crs="EPSG:4326"))  # Convert to GeoDataFrame
@@ -151,7 +153,8 @@ def single_df_VIIRS(args):
         region_granules = fetchGranules(geoRegionDF.total_bounds, SCA_folder, date) 
          # Merge granules
         regional_raster = createMergedRxr(region_granules["filepath"]) 
-    except:
+    except Exception as e:
+        print(f"Exception: {e}")
         print(f"No granules found for {date}, requesting data from NSIDC...")
         #download data
         download_VIIRS(geoRegionDF.total_bounds, SCA_folder, date)
@@ -227,7 +230,7 @@ def download_VIIRS(boundingBox: list[float, float, float, float],
 
     if not isinstance(date, datetime):
         date = datetime.strptime(date, "%Y-%m-%d")
-        year = date.year if date.month < 10 else date.year + 1  # Water years start on October 1st 
+    year = date.year if date.month < 10 else date.year + 1  # Water years start on October 1st
 
     #check to see if path exists, if not make one
     #dataFolder = f"{dataFolder}/WY{year}/{year-1}-{year}NASA"
@@ -261,9 +264,6 @@ def download_VIIRS(boundingBox: list[float, float, float, float],
             attempts -= 1
             print(f"still missing {len(missingCells)} granules for {day}, retrying in 30 seconds, {attempts} tries left")
             time.sleep(30)
-            print("retrying")
-            cells["filepath"] = download("VNP10A1F", version, temporal, bbox, dataFolder, mode="async") 
-            missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")  # before we try again, double check
     print('Processing data for dataframe now...')
 
 def createGranuleGlobpath(dataRoot: str, date: datetime, h: int, v: int) -> str:
@@ -284,7 +284,7 @@ def createGranuleGlobpath(dataRoot: str, date: datetime, h: int, v: int) -> str:
     WY_split = datetime(date.year, 10, 1)  # Split water years on October 1st
 
     # if day is after water year, then we need to adjust the year
-    if date.month > 10:
+    if date.month >= 10:
         year = date.year + 1
         next_year = date.year
     else:
@@ -362,12 +362,15 @@ def createMergedRxr(files: list[str]) -> xr.DataArray:
     #   GTIFF_SRS_SOURCE configuration option to EPSG to use official parameters (overriding the ones from GeoTIFF
     #   keys), or to GEOKEYS to use custom values from GeoTIFF keys and drop the EPSG code."
     tifs = [rxr.open_rasterio(file) for file in files]  # Open all the files as Rioxarray DataArrays
-
-    noLakes = [tif.where(tif != 237, other=0) for tif in tifs]  # replace all the lake values with 0
-    noOceans = [tif.where(tif != 239, other=0) for tif in noLakes]  # replace all the ocean values with 0
-    noErrors = [tif.where(tif <= 100, other=100) for tif in
-                noOceans]  # replace all the other values with 100 (max Snow)
-    return merge_arrays(noErrors, nodata=255)  # Merge the arrays
+    try:
+        noLakes = [tif.where(tif != 237, other=0) for tif in tifs]  # replace all the lake values with 0
+        noOceans = [tif.where(tif != 239, other=0) for tif in noLakes]  # replace all the ocean values with 0
+        noErrors = [tif.where(tif <= 100, other=100) for tif in
+                    noOceans]  # replace all the other values with 100 (max Snow)
+        return merge_arrays(noErrors, nodata=255)  # Merge the arrays
+    finally:
+        for tif in tifs:
+            tif.close()
 
 def calculateGranuleExtent(boundingBox: list[float, float, float, float],
                                day: Union[datetime, str] = datetime(2018, 7, 7)):
