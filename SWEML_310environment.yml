@@ -1,6 +1,9 @@
 name: SWEML_310_v2
 channels:
   - conda-forge
+  - pytorch
+  - nvidia
+  - defaults
 dependencies:
   - jmespath=1.0.1
   - libbrotlicommon=1.0.9
