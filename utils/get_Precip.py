@@ -90,7 +90,7 @@ def Make_Precip_DF(region, output_res, threshold, dataset):
         DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
     elif dataset == 'AORC':
         PrecipDFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/AORCgridMETNLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
-        DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
+        DFpath = f"{HOME}/data/TrainingDFs/{region}/{output_res}M_Resolution/gridMETNLDASDaymet_Vegetation_Sturm_Seasonality_VIIRSGeoObsDFs/{threshold}_fSCA_Thresh"
     if not os.path.exists(PrecipDFpath):
         os.makedirs(PrecipDFpath, exist_ok=True)
 
@@ -290,6 +290,7 @@ def get_aorc_precip(WY,output_res,thresh):
         obs_end = f'{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:]}'
 
         out_path = f"{precip_data_path}/AORC_{region}_{timestamp}.parquet"
+        
         if os.path.exists(out_path):
             continue
 
@@ -433,7 +434,7 @@ def add_prism_df(WY,output_res,threshold):
         right += 0.1
         top += 0.1
         obs_precip_date = obs_precip_transformed.loc[dict(time=slice(WY_start,strdate))]
-        obs_precip_bbox = obs_precip_date.sel(y=slice(bottom, top), x=slice(left, right))
+        obs_precip_bbox = obs_precip_date.sel(y=slice(top, bottom), x=slice(left, right))
 
         lats = xr.DataArray(meta['cen_lat'].values, dims='points')
         lons = xr.DataArray(meta['cen_lon'].values, dims='points')
