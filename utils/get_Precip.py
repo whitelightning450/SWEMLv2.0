@@ -303,9 +303,9 @@ def get_nldas_wy_daily(WY, output_res, thresh, save_path=None, n_workers=8):
             HOME, "data", "Precipitation", str(WY), "NLDAS", f"NLDAS_daily_WY{WY}.zarr"
         )
 
-    # if os.path.exists(save_path):
-    #     print(f"NLDAS daily WY{WY} already exists at {save_path}")
-    #     return xr.open_zarr(save_path)
+    if os.path.exists(save_path):
+        print(f"NLDAS daily WY{WY} already exists at {save_path}")
+        return xr.open_zarr(save_path)
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
 

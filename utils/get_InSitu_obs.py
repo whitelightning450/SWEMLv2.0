@@ -199,8 +199,11 @@ def Get_Monitoring_Data_Threaded_Updated(years, start_m_d, end_m_d, WY=True):
             print('cannont get state abrv', site)
         
     #separate into SNOTEL and CCSS stations
+    #drop CCSS stations that are deprecated
+    stations_drop = ['AGP', 'BGP', 'CRL', 'DPO', 'GEM', 'MDW', 'VLC', 'WTM']
     CCSS_gdf = all_stations_gdf[all_stations_gdf['network'] == 'CCSS'].copy()
     SNOTEL_gdf = all_stations_gdf[all_stations_gdf['network'] == 'SNOTEL'].copy()
+    CCSS_gdf.drop(index=stations_drop, inplace=True, errors='ignore')
     CCSS_gdf.reset_index(inplace = True, drop =True)
     SNOTEL_gdf.reset_index(inplace = True, drop =True)
     
@@ -455,7 +458,8 @@ def combine_dfs(years):
         year_df = pd.read_parquet(f"{snotel_path}/{year}_ground_measures_dp.parquet")
         df = pd.concat([df, year_df])
     
-    #We want a temporally continuous record for our snotel sites throughout the model training/prediction period, there are 771 sites, omit others with an incomplete record
+    #We want a temporally continuous record for our snotel sites throughout the model training/prediction period, 
+    #there are 771 sites, omit others with an incomplete record
     df = df.dropna(axis=1, how='any')
     
     table = pa.Table.from_pandas(df)

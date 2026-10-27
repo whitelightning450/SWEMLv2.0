@@ -87,8 +87,8 @@ def create_WUS_grid(output_res, bbox_wgs84=DEFAULT_BBOX):
     y_min = np.floor(min(ys) / output_res) * output_res
     y_max = np.ceil(max(ys) / output_res) * output_res
 
-    n_cols = int(round((x_max - x_min) / output_res))
-    n_rows = int(round((y_max - y_min) / output_res))
+    n_cols = round((x_max - x_min) / output_res)
+    n_rows = round((y_max - y_min) / output_res)
     print(f"WUS grid: {n_rows} rows x {n_cols} cols = {n_rows * n_cols:,} cells at {output_res}m")
 
     dst_transform = from_origin(x_min, y_max, output_res, output_res)
@@ -139,12 +139,13 @@ def create_WUS_grid(output_res, bbox_wgs84=DEFAULT_BBOX):
         "cen_lon": lon,
     })
     for code, name in STURM_NAMES.items():
-        df[f"sturm_{name}"] = (sturm_vals == code).astype(np.int8)
+        if code not in EXCLUDE_CLASSES:
+            df[f"sturm_{name}"] = (sturm_vals == code).astype(np.int8)
 
     out_dir = os.path.join(HOME, "data", "PreProcessed")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"WUS_grid_{output_res}M.parquet")
-    pq.write_table(pa.Table.from_pandas(df), out_path, compression="BROTLI")
+    pq.write_table(pa.Table.from_pandas(df, preserve_index=False), out_path, compression="BROTLI")
     print(f"Saved: {out_path}")
     return out_path
 

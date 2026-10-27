@@ -12,9 +12,9 @@ from shapely.geometry import Point, Polygon
 from pyproj import CRS, Transformer
 
 # Raster Packages
-import rioxarray as rxr
 import rasterio
-from rioxarray.merge import merge_arrays
+import rasterio.warp
+from rasterio.transform import from_origin
 # import rasterstats as rs
 from osgeo import gdal
 from osgeo import gdalconst
@@ -31,12 +31,13 @@ from osgeo import gdalconst
 # General Packages
 import os
 import re
+import multiprocessing as mp
 from datetime import datetime
 import glob
 # from pprint import pprint
 # from typing import Union
 # from pathlib import Path
-from tqdm._tqdm_notebook import tqdm_notebook
+from tqdm.notebook import tqdm_notebook
 from tqdm.auto import tqdm
 
 # import requests
@@ -59,7 +60,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 
-import utils.NSIDC_Data
+from utils import NSIDC_Data
 import netrc
 import base64
 import getpass
@@ -93,7 +94,18 @@ else:
     
 #set multiprocessing limits
 CPUS = len(os.sched_getaffinity(0))
-CPUS = int((CPUS/2)-2)
+CPUS = max(1, int(CPUS/2)-2)
+
+# per-worker cache: loaded once on first task, reused for subsequent tasks in the same worker process
+_wus_grid_cache = {}
+
+def _load_wus_grid_ids(output_res):
+    if output_res not in _wus_grid_cache:
+        path = os.path.join(HOME, 'data', 'PreProcessed', f'WUS_grid_{output_res}M.parquet')
+        _wus_grid_cache[output_res] = set(
+            pd.read_parquet(path, columns=['cell_id'])['cell_id']
+        )
+    return _wus_grid_cache[output_res]
 
 
 class ASODataTool:
@@ -101,6 +113,7 @@ class ASODataTool:
         self.short_name = short_name
         self.version = version
         self.polygon = polygon
+        self.bounding_box = ''
         self.filename_filter = filename_filter
         self.url_list = []
         self.CMR_URL = 'https://cmr.earthdata.nasa.gov'
@@ -210,8 +223,8 @@ class ASODownload(ASODataTool):
             self.bounding_box = self.get_bounding_box(region)
             print(f"Bounding Box collected for {region}: {self.bounding_box}")
             return self.bounding_box
-        except ValueError:
-            print("Invalid input. Please enter a valid index.")
+        except Exception as e:
+            print(f"Invalid input. Please enter a valid index. Error {e}")
                                 
                                 
 class ASODataProcessing_v2: 
@@ -225,8 +238,8 @@ class ASODataProcessing_v2:
 
     Output parquet schema:
         cell_id : str    "{res}M_{cen_lat}_{cen_lon}"
-        cen_lat : float  WGS84 latitude  (degrees, rounded to 3 dp)
-        cen_lon : float  WGS84 longitude (degrees, rounded to 3 dp)
+        cen_lat : float  WGS84 latitude  (degrees, rounded to 6 dp)
+        cen_lon : float  WGS84 longitude (degrees, rounded to 6 dp)
         swe_m   : float  snow water equivalent (meters)
 
     Handles both filename conventions:
@@ -260,8 +273,9 @@ class ASODataProcessing_v2:
         return f"{output_res}M_{round(cen_lat, 6)}_{round(cen_lon, 6)}"
     
     def process_single_ASO_file(self, args):
-        """Reproject one ASO tif to Albers, resample, convert back to WGS84, save as parquet."""
+        """Average one ASO tif onto the WUS grid, filter to valid snow cells, save as parquet."""
         folder_path, tiff_filename, output_res, WY, dir = args
+        output_res = int(output_res)
         tiff_path = os.path.join(folder_path, tiff_filename)
 
         try:
@@ -271,43 +285,67 @@ class ASODataProcessing_v2:
             return
 
         try:
-            # Reproject to Albers Equal Area — pixel size is true square meters
-            rds = rxr.open_rasterio(tiff_path, masked=True)
-            rds_albers = rds.rio.reproject(
-                "EPSG:5070",
-                resolution=output_res,
-                resampling=rasterio.enums.Resampling.bilinear,
-            ).squeeze(drop=True)
-            rds_albers.name = "swe_m"
+            wus_ids = _load_wus_grid_ids(output_res)
 
-            data = rds_albers.values                  # 2D numpy array, NaN where nodata
-            xs   = rds_albers.x.values                # 1D array of Albers x coords
-            ys   = rds_albers.y.values                # 1D array of Albers y coords
+            with rasterio.open(tiff_path) as src:
+                # Get tiff extent in EPSG:5070 and snap to WUS grid lattice
+                x_min_t, y_min_t, x_max_t, y_max_t = rasterio.warp.transform_bounds(
+                    src.crs, "EPSG:5070", *src.bounds
+                )
+                x_min = np.floor(x_min_t / output_res) * output_res
+                x_max = np.ceil(x_max_t / output_res) * output_res
+                y_min = np.floor(y_min_t / output_res) * output_res
+                y_max = np.ceil(y_max_t / output_res) * output_res
 
-            # Build pixel mask 
-            xx, yy = np.meshgrid(xs, ys)
-            mask = np.isfinite(data) & (data >= 0)
-            if not mask.any():
+                n_cols = round((x_max - x_min) / output_res)
+                n_rows = round((y_max - y_min) / output_res)
+                dst_transform = from_origin(x_min, y_max, output_res, output_res)
+
+                dst_array = np.full((n_rows, n_cols), np.nan, dtype=np.float32)
+                rasterio.warp.reproject(
+                    source=rasterio.band(src, 1),
+                    destination=dst_array,
+                    dst_transform=dst_transform,
+                    dst_crs="EPSG:5070",
+                    resampling=rasterio.enums.Resampling.average,
+                    src_nodata=src.nodata,
+                    dst_nodata=np.nan,
+                )
+
+            valid_row, valid_col = np.where(np.isfinite(dst_array) & (dst_array >= 0))
+            if len(valid_row) == 0:
                 print(f"No valid SWE data in {tiff_filename}")
                 return
 
+            x_centers = x_min + (valid_col + 0.5) * output_res
+            y_centers = y_max - (valid_row + 0.5) * output_res
+
             transformer = Transformer.from_crs("EPSG:5070", "EPSG:4326", always_xy=True)
-            lon, lat = transformer.transform(xx[mask], yy[mask])
+            lon, lat = transformer.transform(x_centers, y_centers)
+            lat = lat.round(6)
+            lon = lon.round(6)
 
             df = pd.DataFrame({
-                'cen_lat': lat.round(6),
-                'cen_lon': lon.round(6),
-                'swe_m':   data[mask].round(4),
+                'cell_id': [f"{output_res}M_{la}_{lo}" for la, lo in zip(lat, lon)],
+                'cen_lat': lat,
+                'cen_lon': lon,
+                'swe_m':   dst_array[valid_row, valid_col].round(4),
             })
-            df['cell_id'] = df.apply(
-                lambda row: self.make_cell_id(output_res, row['cen_lat'], row['cen_lon']), axis=1
-            )
-            df = df[['cell_id', 'cen_lat', 'cen_lon', 'swe_m']]
+
+            # Filter to WUS grid cells (enforces Sturm mask)
+            n_before = len(df)
+            df = df[df['cell_id'].isin(wus_ids)]
+            match_rate = len(df) / n_before if n_before > 0 else 0
+            if match_rate < 0.1:
+                print(f"Warning: low WUS match rate {match_rate:.1%} ({len(df)}/{n_before}) in {tiff_filename} -- possible cell_id mismatch")
+            if df.empty:
+                print(f"No WUS grid cells matched in {tiff_filename}")
+                return
 
             parquet_folder = os.path.join(dir, f"{WY}/{output_res}M_SWE_parquet")
             os.makedirs(parquet_folder, exist_ok=True)
             pq.write_table(
-                pa.Table.from_pandas(df),
+                pa.Table.from_pandas(df, preserve_index=False),
                 os.path.join(parquet_folder, f"ASO_{basin}_{output_res}M_SWE_{date}.parquet"),
                 compression='BROTLI',
             )
@@ -336,11 +374,13 @@ class ASODataProcessing_v2:
             for f in tiff_files
         ]
 
-        with cf.ProcessPoolExecutor(max_workers=CPUS) as executor:
+        with cf.ProcessPoolExecutor(max_workers=CPUS, mp_context=mp.get_context('forkserver')) as executor:
             futures = [executor.submit(self._process_wrapper, args) for args in args_list]
             for future in tqdm(cf.as_completed(futures), total=len(futures), desc=f"WY{WY}"):
                 try:
-                    future.result()
+                    future.result(timeout=600)
+                except cf.TimeoutError:
+                    print("Worker timed out after 600s -- skipping file")
                 except Exception as e:
                     print(f"Worker error: {e}")
 
