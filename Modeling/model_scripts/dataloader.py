@@ -86,7 +86,7 @@ def get_ML_Data(regionlist, output_res, DataFrame, fSCA_thresh):
 
         #reset index for below steps
         trainingDF.sort_values('Date', inplace = True)
-        trainingDF.reset_index(inplace=True)
+        trainingDF.reset_index(inplace=True, drop=True)
         # except:
         #     print("Data not found, retreiving from AWS S3")
         #     if not os.path.exists(datapath):

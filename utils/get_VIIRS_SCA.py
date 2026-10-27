@@ -18,18 +18,19 @@ import pyarrow.parquet as pq
 
 
 # Raster Packages
+import h5py
+import re
+import rasterio
 import rioxarray as rxr
 from rioxarray.merge import merge_arrays
 import rasterstats as rs
 import earthaccess as ea
-from utils.nsidc_fetch import download, format_date, format_boundingbox
 
 
 import glob
 from pprint import pprint
 from typing import Union
 from pathlib import Path
-import time
 
 '''
 To create .netrc file:
@@ -149,19 +150,24 @@ def single_df_VIIRS(args):
     #print(geoRegionDF.total_bounds, SCA_folder, date)
 
     try:
-        # Fetch granules
-        region_granules = fetchGranules(geoRegionDF.total_bounds, SCA_folder, date) 
-         # Merge granules
-        regional_raster = createMergedRxr(region_granules["filepath"]) 
+        region_granules = fetchGranules(geoRegionDF.total_bounds, SCA_folder, date)
+        regional_raster = createMergedRxr(region_granules["filepath"])
     except Exception as e:
         print(f"Exception: {e}")
         print(f"No granules found for {date}, requesting data from NSIDC...")
-        #download data
-        download_VIIRS(geoRegionDF.total_bounds, SCA_folder, date)
-        # Fetch granules
-        region_granules = fetchGranules(geoRegionDF.total_bounds, SCA_folder, date) 
-         # Merge granules
-        regional_raster = createMergedRxr(region_granules["filepath"]) 
+        viirs_error = None
+        try:
+            download_VIIRS(geoRegionDF.total_bounds, SCA_folder, date)
+            region_granules = fetchGranules(geoRegionDF.total_bounds, SCA_folder, date)
+            regional_raster = createMergedRxr(region_granules["filepath"])
+        except Exception as download_e:
+            # store as string only — download_e may hold urllib3 SSL objects that
+            # cannot be pickled across the ProcessPoolExecutor boundary; Python 3
+            # deletes download_e from local scope on exit from this except block,
+            # so raising after the block avoids carrying those references
+            viirs_error = f"VIIRS data unavailable for {date}: {download_e}"
+        if viirs_error is not None:
+            raise RuntimeError(viirs_error)
     
     #set buffer around cell of interest,must be larger than 400 m
     if output_res >799:
@@ -217,7 +223,7 @@ def fetchGranules(boundingBox: list[float, float, float, float],
         lambda x: granuleFilepath(createGranuleGlobpath(dataFolder, date, x['h'], x['v'])),
         axis=1
     )  # add filepath if it exists, otherwise add empty string
-    
+
     #display(cells)
     return cells
 
@@ -226,44 +232,25 @@ def download_VIIRS(boundingBox: list[float, float, float, float],
                   date: Union[datetime, str],
                   shouldDownload = True):
 
-    cells = calculateGranuleExtent(boundingBox, date)  # Fetch granules from API, no need to check bounding box
-
     if not isinstance(date, datetime):
         date = datetime.strptime(date, "%Y-%m-%d")
-    year = date.year if date.month < 10 else date.year + 1  # Water years start on October 1st
+    year = date.year if date.month < 10 else date.year + 1
 
-    #check to see if path exists, if not make one
-    #dataFolder = f"{dataFolder}/WY{year}/{year-1}-{year}NASA"
     dataFolder = f"{dataFolder}/WY{year}"
-    if os.path.exists(dataFolder)== False:
+    if not os.path.exists(dataFolder):
         os.makedirs(dataFolder)
 
-    if not isinstance(dataFolder, Path):
-        dataFolder = Path(dataFolder)
-        dayOfYear = date.strftime("%Y%j") 
-
-    
-    day = date.strftime("%Y-%m-%d")
-    cells["date"] = date  # record the date
-    cells["filepath"] = cells.apply(
-        lambda x: granuleFilepath(createGranuleGlobpath(dataFolder, date, x['h'], x['v'])),
-        axis=1
-                )  #
-    # display(cells)
-    #This line of code goes and gets the data if it is not in folder
-    missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")
-    attempts = 3  # how many times it will try and download the missing granules
-    while shouldDownload and len(missingCells) > 0 and attempts > 0:
-        temporal = format_date(date)  # Format date as YYYY-MM-DD
-        bbox = format_boundingbox(boundingBox)  # Format bounding box as "W,S,E,N"
-        version = "2" #if date > datetime(2018, 1, 1) else "1"  # Use version 1 if date is before 2018, looks like all products use 2 now, or this is backwards...
-        cells["filepath"] = download("VNP10A1F", version, temporal, bbox, dataFolder, mode="async") #might need try/except here...
-        # )  # add filepath if it exists, otherwise add empty string
-        missingCells = cells[cells["filepath"] == ''][["h", "v"]].to_dict("records")
-        if len(missingCells) > 0:
-            attempts -= 1
-            print(f"still missing {len(missingCells)} granules for {day}, retrying in 30 seconds, {attempts} tries left")
-            time.sleep(30)
+    if shouldDownload:
+        results = (ea.granule_query()
+                   .short_name("VNP10A1F")
+                   .version("2")
+                   .bounding_box(*boundingBox)
+                   .temporal(date.strftime("%Y-%m-%d"), date.strftime("%Y-%m-%d"))
+                   .get(100))
+        if results:
+            ea.download(results, dataFolder)
+        else:
+            print(f"No VIIRS granules found for {date.strftime('%Y-%m-%d')}")
     print('Processing data for dataframe now...')
 
 def createGranuleGlobpath(dataRoot: str, date: datetime, h: int, v: int) -> str:
@@ -291,8 +278,9 @@ def createGranuleGlobpath(dataRoot: str, date: datetime, h: int, v: int) -> str:
         year = date.year
         next_year = date.year 
     
-    #return os.path.join(dataRoot, f"WY{next_year}/{year}-{next_year}NASA/VNP10A1F_A{dayOfYear}_h{h}v{v}_*.tif")
-    return os.path.join(dataRoot, f"WY{next_year}/VNP10A1F_A{dayOfYear}_h{h}v{v}_*.tif")
+    h_str = str(int(h)).zfill(2)
+    v_str = str(int(v)).zfill(2)
+    return os.path.join(dataRoot, f"WY{next_year}/VNP10A1F.A{dayOfYear}.h{h_str}v{v_str}.*.h5")
 
 def granuleFilepath(filepath: str) -> str:
     """
@@ -332,15 +320,16 @@ def augmentGeoDF(gdf: gpd.GeoDataFrame,
         buffered = gdf.to_crs(raster.rio.crs)  # Convert the GeoDataFrame to the same CRS as the raster
 
     stats = rs.zonal_stats(buffered,  # pass the buffered geometry
-                           raster.values[0],  # pass the raster values as a numpy array, TODO investigate passing GDAL
-                           no_data=noData,
+                           raster.values[0].astype(np.float32),  # float required so nodata=255 -> nan works
+                           nodata=noData,
                            affine=raster.rio.transform(),  # required for passing numpy arrays
                            stats=['mean'],  # we only want the mean, others are available if needed
+                           all_touched=True,  # include pixels touched by buffer edge, not just those with center inside
                            geojson_out=False,  # we will add the result back into a GeoDataFrame, so no need for GeoJSON
                            )
 
     gdf["VIIRS_SCA"] = [stat['mean'] for stat in stats]  # add the mean to the GeoDataFrame
-    gdf["hasSnow"] = gdf["VIIRS_SCA"] > threshold
+    gdf["hasSnow"] = gdf["VIIRS_SCA"] >= threshold
 
     return gdf
 
@@ -357,17 +346,44 @@ def createMergedRxr(files: list[str]) -> xr.DataArray:
             merged (DataArray): A merged DataArray.
     """
 
-    # FIXME sometimes throws "CPLE_AppDefined The definition of geographic CRS EPSG:4035 got from GeoTIFF keys is not
-    #   the same as the one from the EPSG registry, which may cause issues during reprojection operations. Set
-    #   GTIFF_SRS_SOURCE configuration option to EPSG to use official parameters (overriding the ones from GeoTIFF
-    #   keys), or to GEOKEYS to use custom values from GeoTIFF keys and drop the EPSG code."
-    tifs = [rxr.open_rasterio(file) for file in files]  # Open all the files as Rioxarray DataArrays
+    tifs = []
+    for file in files:
+        if not file:
+            continue
+        if str(file).endswith('.h5'):
+            if os.path.getsize(file) < 500_000:
+                os.remove(file)
+                raise ValueError(f"Removed incomplete HDF5 file (< 500KB), will re-download: {file}")
+            with rasterio.open(file) as src:
+                sds = [s for s in src.subdatasets if 'CGF_NDSI_Snow_Cover' in s]
+            if not sds:
+                raise ValueError(f"CGF_NDSI_Snow_Cover not found in {file}")
+            with h5py.File(file, 'r') as h5f:
+                meta = h5f['HDFEOS INFORMATION/StructMetadata.0'][()].decode()
+            ul_x, ul_y = map(float, re.search(r'UpperLeftPointMtrs=\(([^)]+)\)', meta).group(1).split(','))
+            lr_x, lr_y = map(float, re.search(r'LowerRightMtrs=\(([^)]+)\)', meta).group(1).split(','))
+            tif = rxr.open_rasterio(sds[0])
+            ydim, xdim = tif.shape[1], tif.shape[2]
+            x_coords = ul_x + ((lr_x - ul_x) / xdim) * (np.arange(xdim) + 0.5)
+            y_coords = ul_y + ((lr_y - ul_y) / ydim) * (np.arange(ydim) + 0.5)
+            tif = (tif.assign_coords(x=x_coords, y=y_coords)
+                      .rio.write_crs("+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +R=6371007.181 +units=m +no_defs"))
+            tifs.append(tif)
+        else:
+            tifs.append(rxr.open_rasterio(file))
+    if not tifs:
+        raise FileNotFoundError("No valid VIIRS tile files found for this date/region")
     try:
+        crs = next((t.rio.crs for t in tifs if t.rio.crs is not None), None)
         noLakes = [tif.where(tif != 237, other=0) for tif in tifs]  # replace all the lake values with 0
         noOceans = [tif.where(tif != 239, other=0) for tif in noLakes]  # replace all the ocean values with 0
-        noErrors = [tif.where(tif <= 100, other=100) for tif in
-                    noOceans]  # replace all the other values with 100 (max Snow)
-        return merge_arrays(noErrors, nodata=255)  # Merge the arrays
+        noErrors = [tif.where(tif <= 100, other=255) for tif in noOceans]  # replace all fill/error codes with nodata
+        if crs is not None:
+            noErrors = [da.rio.write_crs(crs) for da in noErrors]  # .where() drops grid_mapping attr
+        merged = merge_arrays(noErrors, nodata=255)
+        if merged.rio.crs and merged.rio.crs.to_epsg() != 4326:
+            merged = merged.rio.reproject("EPSG:4326", nodata=255)
+        return merged
     finally:
         for tif in tifs:
             tif.close()
@@ -393,14 +409,23 @@ def calculateGranuleExtent(boundingBox: list[float, float, float, float],
     #print(results)
     cells = []
     for result in results:
-        geometry = shapely.geometry.Polygon(
-            [(x["Longitude"], x["Latitude"]) for x in
-                result["umm"]["SpatialExtent"]["HorizontalSpatialDomain"]["Geometry"]["GPolygons"][0]["Boundary"][
-                    "Points"]]
-        )
+        geom_data = result["umm"]["SpatialExtent"]["HorizontalSpatialDomain"]["Geometry"]
+        if geom_data.get("GPolygons"):
+            geometry = shapely.geometry.Polygon(
+                [(x["Longitude"], x["Latitude"]) for x in
+                    geom_data["GPolygons"][0]["Boundary"]["Points"]]
+            )
+        else:
+            br = geom_data["BoundingRectangles"][0]
+            geometry = shapely.geometry.box(
+                br["WestBoundingCoordinate"], br["SouthBoundingCoordinate"],
+                br["EastBoundingCoordinate"], br["NorthBoundingCoordinate"]
+            )
+        # search by name rather than hardcoded index — attribute order varies across granules
+        attrs = {a["Name"].upper(): a["Values"][0] for a in result["umm"]["AdditionalAttributes"]}
         cell = {
-            "h": result["umm"]["AdditionalAttributes"][1]["Values"][0],  # HORIZONTAL TILE NUMBER
-            "v": result["umm"]["AdditionalAttributes"][2]["Values"][0],  # VERTICAL TILE NUMBER
+            "h": attrs["HORIZONTALTILENUMBER"],
+            "v": attrs["VERTICALTILENUMBER"],
             "geometry": geometry
         }
         cells.append(cell)
